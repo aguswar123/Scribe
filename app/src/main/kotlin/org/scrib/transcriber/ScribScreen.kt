@@ -147,7 +147,7 @@ fun ScribScreen(
     onTranscriptFormat: (TranscriptFormat) -> Unit,
     onDeleteHistory: (String) -> Unit,
     onClearHistory: () -> Unit,
-    onSaveHistoryFile: (String, Uri) -> Unit,
+    onSaveHistoryFile: (String, Uri, TranscriptFormat) -> Unit,
     onTogglePinned: (String) -> Unit,
     benchmarkRuns: List<BenchmarkRun>,
     onAbout: () -> Unit
@@ -331,7 +331,7 @@ fun ScribScreen(
             HistoryEntryDialog(
                 entry,
                 onClose = { openHistoryId = null },
-                onSaveFile = { uri -> onSaveHistoryFile(id, uri) }
+                onSaveFile = { uri, format -> onSaveHistoryFile(id, uri, format) }
             )
         }
     }
@@ -1706,45 +1706,52 @@ private fun TranscriptionDialog(
 private fun HistoryEntryDialog(
     entry: TranscriptHistory.Entry,
     onClose: () -> Unit,
-    onSaveFile: (Uri) -> Unit
+    onSaveFile: (Uri, TranscriptFormat) -> Unit
 ) {
     val cs = MaterialTheme.colorScheme
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val baseName = entry.fileName.substringBeforeLast('.').ifBlank { "transcript" }
-    val saveContract = remember { CreateTranscriptDocument(null, transcriptMimeType(TranscriptFormat.TXT)) }
+    var format by rememberSaveable { mutableStateOf(TranscriptFormat.TXT) }
+    val hasTimes = entry.segments.isNotEmpty()
+    val shown = if (format == TranscriptFormat.TXT || !hasTimes) entry.text else entry.segments.format(format)
+    val saveContract = remember(format) { CreateTranscriptDocument(null, transcriptMimeType(format)) }
     val saveLauncher = rememberLauncherForActivityResult(saveContract) { uri ->
-        if (uri != null) onSaveFile(uri)
+        if (uri != null) onSaveFile(uri, format)
     }
     AlertDialog(
         onDismissRequest = onClose,
         title = { Text(entry.fileName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         text = {
             Column {
+                if (hasTimes) {
+                    FormatPicker(format, { format = it }, hasWords = false)
+                    Spacer(Modifier.height(10.dp))
+                }
                 Column(Modifier.heightIn(max = 340.dp).verticalScroll(rememberScrollState())) {
-                    Text(entry.text, fontSize = 14.sp, lineHeight = 20.sp, color = cs.onSurface)
+                    Text(shown, fontSize = 14.sp, lineHeight = 20.sp, color = cs.onSurface)
                 }
                 Spacer(Modifier.height(12.dp))
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally)
                 ) {
-                    IconButton(onClick = { clipboard.setText(AnnotatedString(entry.text)) }) {
+                    IconButton(onClick = { clipboard.setText(AnnotatedString(shown)) }) {
                         Icon(painterResource(R.drawable.ic_action_copy), stringResource(R.string.action_copy))
                     }
                     IconButton(onClick = {
                         val send = Intent(Intent.ACTION_SEND)
                             .setType("text/plain")
-                            .putExtra(Intent.EXTRA_TEXT, entry.text)
+                            .putExtra(Intent.EXTRA_TEXT, shown)
                             .putExtra(Intent.EXTRA_SUBJECT, baseName)
                         context.startActivity(Intent.createChooser(send, null))
                     }) {
                         Icon(painterResource(R.drawable.ic_action_share), stringResource(R.string.action_share))
                     }
-                    IconButton(onClick = { saveLauncher.launch("$baseName.txt") }) {
+                    IconButton(onClick = { saveLauncher.launch("$baseName.${format.extension}") }) {
                         Icon(
                             painterResource(R.drawable.ic_action_save),
-                            stringResource(R.string.action_save_ext, TranscriptFormat.TXT.extension)
+                            stringResource(R.string.action_save_ext, format.extension)
                         )
                     }
                 }

@@ -591,8 +591,10 @@ class ScribViewModel(app: Application) : AndroidViewModel(app) {
         push()
     }
 
-    fun saveHistoryEntryToFile(id: String, uri: Uri) {
-        val text = history().firstOrNull { it.id == id }?.text ?: return
+    fun saveHistoryEntryToFile(id: String, uri: Uri, format: TranscriptFormat = TranscriptFormat.TXT) {
+        val entry = history().firstOrNull { it.id == id } ?: return
+        val text = if (format == TranscriptFormat.TXT || entry.segments.isEmpty()) entry.text
+        else entry.segments.format(format)
         viewModelScope.launch(Dispatchers.IO) {
             val ok = try {
                 writeText(uri, text, "wt")
