@@ -96,6 +96,7 @@ fun NewBar(
             .padding(horizontal = config.paddingDp.dp)
     ) {
         items.forEachIndexed { index, item ->
+            if (index == NewUiConfig.TRANSCRIBE_INDEX && !config.showTranscribeTab) return@forEachIndexed
             NewBarTab(config, item, index, index == selected) { onSelect(index) }
         }
     }
@@ -279,6 +280,16 @@ fun NewUiDialog(items: List<NewBarItem>, onDismiss: () -> Unit) {
                         }
                     }
                     if (config.newBar) {
+                        SectionLabel("Tabs in bar")
+                        Surface(color = cs.surfaceContainer, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                            Row(Modifier.padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Transcribe tab", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
+                                    Text("Turn off to hide it. It is also in Home.", fontSize = 12.sp, color = cs.onSurfaceVariant)
+                                }
+                                Switch(checked = config.showTranscribeTab, onCheckedChange = { on -> change { it.copy(showTranscribeTab = on) } })
+                            }
+                        }
                         SectionLabel("Show in bar")
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             BarChip("Icon + text", config.display == BarDisplay.BOTH) { change { it.copy(display = BarDisplay.BOTH) } }

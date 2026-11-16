@@ -13,6 +13,7 @@ enum class BarOutlineColor { DEFAULT, ACCENT, TEXT }
 data class NewUiConfig(
     val enabled: Boolean = false,
     val newBar: Boolean = false,
+    val showTranscribeTab: Boolean = true,
     val display: BarDisplay = BarDisplay.BOTH,
     val heightDp: Int = 64,
     val sideMarginDp: Int = 16,
@@ -36,6 +37,9 @@ data class NewUiConfig(
 
     companion object {
         const val TAB_COUNT = 5
+
+        // Position of the Transcribe tab, the one that can be taken out of the bar.
+        const val TRANSCRIBE_INDEX = 2
 
         // Lucide names, in the order of the tabs: Home, Record, Transcribe, Keyboard, Settings.
         val DEFAULT_ICONS = listOf("house", "mic", "audio-lines", "keyboard", "settings")
@@ -65,6 +69,7 @@ object NewUiSettings {
         val edit = prefs(context).edit()
             .putBoolean("enabled", next.enabled)
             .putBoolean("newBar", next.newBar)
+            .putBoolean("showTranscribe", next.showTranscribeTab)
             .putString("display", next.display.name)
             .putInt("height", next.heightDp)
             .putInt("sideMargin", next.sideMarginDp)
@@ -108,6 +113,7 @@ object NewUiSettings {
             NewUiConfig(
                 enabled = p.getBoolean("enabled", d.enabled),
                 newBar = p.getBoolean("newBar", d.newBar),
+                showTranscribeTab = p.getBoolean("showTranscribe", d.showTranscribeTab),
                 display = runCatching { BarDisplay.valueOf(p.getString("display", null) ?: "") }.getOrDefault(d.display),
                 heightDp = p.getInt("height", d.heightDp),
                 sideMarginDp = p.getInt("sideMargin", d.sideMarginDp),
