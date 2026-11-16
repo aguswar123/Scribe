@@ -1,0 +1,87 @@
+name: Build Scrib APK
+
+# Plain Scrib only (no Max, no Remote). Manual run; the signed APK lands on the
+# "scrib-build" pre-release so it can be downloaded straight from the phone.
+
+on:
+  workflow_dispatch:
+    inputs:
+      abis:
+        description: "CPU architectures (arm64-v8a fits nearly every phone since 2016; comma-separate for a universal APK)"
+        required: true
+        default: arm64-v8a
+
+permissions:
+  contents: write
+
+concurrency:
+  group: scrib-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build
+        env:
+          ABIS: ${{ inputs.abis }}
+        run: ./gradlew :app:assembleRelease -Pabis="$ABIS"
+
+      - name: Sign
+        env:
+          KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_B64 }}
+          KEYSTORE_PASS: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          ABIS: ${{ inputs.abis }}
+        run: |
+          tools="$ANDROID_HOME/build-tools/35.0.0"
+          apk="$(ls app/build/outputs/apk/release/*-unsigned.apk | head -n1)"
+          if [ -n "$KEYSTORE_B64" ]; then
+            printf '%s' "$KEYSTORE_B64" | base64 -d > release.jks
+            pass="$KEYSTORE_PASS"
+            echo "Signed with your release key." >> "$GITHUB_STEP_SUMMARY"
+          else
+            pass="scribtemp"
+            keytool -genkeypair -keystore release.jks -alias scrib -keyalg RSA -keysize 2048 \
+              -validity 10000 -storepass "$pass" -keypass "$pass" -dname "CN=Scrib"
+            echo "No release key set: signed with a temporary key. It differs on every build, so uninstall the previous build before installing this one." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          export SIGN_PASS="$pass"
+          case "$ABIS" in
+            *,*) name="Scrib-universal" ;;
+            *) name="Scrib-$ABIS" ;;
+          esac
+          mkdir -p dist
+          "$tools/zipalign" -f -P 16 4 "$apk" "dist/$name.aligned"
+          "$tools/apksigner" sign --ks release.jks --ks-key-alias scrib \
+            --ks-pass env:SIGN_PASS --key-pass env:SIGN_PASS --out "dist/$name.apk" "dist/$name.aligned"
+          "$tools/apksigner" verify "dist/$name.apk"
+          rm -f "dist/$name.aligned" release.jks
+          ls -l dist
+
+      - name: Publish to the scrib-build pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git push --force origin HEAD:refs/tags/scrib-build
+          notes="Plain Scrib build from ${GITHUB_SHA::7} · $(date -u +%Y-%m-%d)"
+          if gh release view scrib-build >/dev/null 2>&1; then
+            gh release edit scrib-build --prerelease --title "Scrib build" --notes "$notes"
+            for asset in $(gh release view scrib-build --json assets --jq '.assets[].name'); do
+              gh release delete-asset scrib-build "$asset" -y
+            done
+            gh release upload scrib-build dist/*.apk --clobber
+          else
+            gh release create scrib-build dist/*.apk --prerelease --title "Scrib build" --notes "$notes"
+          fi
