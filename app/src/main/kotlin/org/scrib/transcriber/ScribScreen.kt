@@ -242,6 +242,10 @@ fun ScribScreen(
             } else {
                 AppBar(onAbout, showAbout = tab == ScribTab.Home || tab == ScribTab.Settings)
             }
+            CompactScope {
+            if (newUi.enabled && newUi.showTitles && tab != ScribTab.Home) {
+                ScreenTitle(stringResource(tab.labelRes))
+            }
             when (tab) {
                 ScribTab.Home -> HomeTab(
                     state,
@@ -312,6 +316,7 @@ fun ScribScreen(
                     recording = recording
                 )
             }
+            }
         }
         if (newUi.floating) {
             NewBar(
@@ -321,6 +326,8 @@ fun ScribScreen(
                 onSelect = { tab = ScribTab.entries[it] },
                 modifier = Modifier.navigationBarsPadding().padding(top = 4.dp)
             )
+        } else if (newUi.enabled) {
+            IosTabBar(newUi, barItems, tab.ordinal) { tab = ScribTab.entries[it] }
         } else {
             BottomBar(tab) { tab = it }
         }
@@ -426,18 +433,35 @@ private fun HomeTab(
         }
         if (!state.firstRun) {
             item {
-                ServiceCard(
-                    glyph = "🎙",
-                    title = stringResource(R.string.record_and_transcribe),
-                    tag = "scrib/home/record"
-                ) { onRecord() }
-            }
-            item {
-                ServiceCard(
-                    glyph = "📁",
-                    title = stringResource(R.string.transcribe_audio_file),
-                    tag = "scrib/home/pick_file"
-                ) { onPickFile() }
+                if (LocalCompactUi.current) {
+                    Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ServiceTile(
+                            glyph = "🎙",
+                            title = stringResource(R.string.record_and_transcribe),
+                            tag = "scrib/home/record",
+                            modifier = Modifier.weight(1f)
+                        ) { onRecord() }
+                        ServiceTile(
+                            glyph = "📁",
+                            title = stringResource(R.string.transcribe_audio_file),
+                            tag = "scrib/home/pick_file",
+                            modifier = Modifier.weight(1f)
+                        ) { onPickFile() }
+                    }
+                } else {
+                    Column {
+                        ServiceCard(
+                            glyph = "🎙",
+                            title = stringResource(R.string.record_and_transcribe),
+                            tag = "scrib/home/record"
+                        ) { onRecord() }
+                        ServiceCard(
+                            glyph = "📁",
+                            title = stringResource(R.string.transcribe_audio_file),
+                            tag = "scrib/home/pick_file"
+                        ) { onPickFile() }
+                    }
+                }
             }
             val quick = (state.standard + state.custom + state.sherpaRows).filter { it.id in state.pinnedIds }
             if (quick.isNotEmpty()) {
@@ -463,10 +487,10 @@ private fun QuickModelCard(row: ModelRow, actions: Actions) {
     val active = row.state == RowState.Active
     Surface(
         color = if (active) cs.primaryContainer else cs.surfaceContainer,
-        shape = RoundedCornerShape(16.dp),
+        shape = uiCardShape(),
         border = BorderStroke(if (active) 1.5.dp else 1.dp, if (active) cs.primary else Color.Transparent),
-        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
-            .clickableRow(RoundedCornerShape(16.dp)) { actions.onUse(row.id) }
+        modifier = Modifier.fillMaxWidth().padding(bottom = uiGap())
+            .clickableRow(uiCardShape()) { actions.onUse(row.id) }
     ) {
         Row(
             Modifier.padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
@@ -517,7 +541,7 @@ private fun RecordTab(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp)
     ) {
-        item { Spacer(Modifier.height(24.dp)) }
+        item { Spacer(Modifier.height(if (LocalCompactUi.current) 2.dp else 24.dp)) }
         item { RecordButton(onRecord) }
         item {
             Text(
@@ -571,8 +595,8 @@ private fun RecordTab(
 private fun HistoryRowCard(entry: TranscriptHistory.Entry, onOpen: () -> Unit, onDelete: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Surface(
-        color = cs.surfaceContainer, shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clickableRow(RoundedCornerShape(16.dp), onOpen)
+        color = cs.surfaceContainer, shape = uiCardShape(),
+        modifier = Modifier.fillMaxWidth().padding(bottom = uiGap()).clickableRow(uiCardShape(), onOpen)
     ) {
         Column(Modifier.padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -616,7 +640,7 @@ private fun FileTab(state: ScribUiState, actions: Actions, onOpenTab: (ScribTab)
     val cs = MaterialTheme.colorScheme
     Column(
         Modifier.fillMaxSize().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.Center,
+        verticalArrangement = if (LocalCompactUi.current) Arrangement.Top else Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         TranscribeFileButton(onPick)
@@ -688,7 +712,7 @@ private fun KeyboardTab(
                     fontWeight = FontWeight.SemiBold,
                     color = cs.onSurface
                 )
-                Switch(
+                IosSwitch(
                     checked = settings.enabled,
                     onCheckedChange = { onConfigureKeyboardLayouts(it, selectedKeys, customKeys) }
                 )
@@ -743,7 +767,7 @@ private fun KeyboardTab(
                         )
                 ) {
                     Row(
-                        Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        Modifier.padding(horizontal = 12.dp, vertical = if (LocalCompactUi.current) 6.dp else 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
@@ -1067,15 +1091,13 @@ private fun ServiceCard(
 ) {
     val cs = MaterialTheme.colorScheme
     Surface(
-        color = cs.surfaceContainer, shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
+        color = cs.surfaceContainer, shape = uiCardShape(),
+        modifier = Modifier.fillMaxWidth().padding(bottom = uiGap())
             .then(if (tag != null) Modifier.testTag(tag) else Modifier)
-            .clickableRow(RoundedCornerShape(16.dp), onClick)
+            .clickableRow(uiCardShape(), onClick)
     ) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
-                Text(glyph, fontSize = 18.sp)
-            }
+        Row(Modifier.padding(horizontal = 16.dp, vertical = uiRowPad() + 0.dp), verticalAlignment = Alignment.CenterVertically) {
+            EntryGlyph(glyph)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
@@ -1084,7 +1106,7 @@ private fun ServiceCard(
                 }
             }
             Spacer(Modifier.width(16.dp))
-            Text("›", fontSize = 22.sp, color = cs.onSurfaceVariant)
+            EntryChevron()
         }
     }
 }
@@ -1176,8 +1198,8 @@ private fun Bar(h: androidx.compose.ui.unit.Dp, color: Color, alpha: Float) {
 @Composable
 private fun StatusCard(state: ScribUiState, onOpenSettings: (() -> Unit)? = null, onSwitchModel: (() -> Unit)? = null) {
     val cs = MaterialTheme.colorScheme
-    Surface(color = cs.surfaceContainer, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 16.dp)) {
-        Column(Modifier.padding(horizontal = 18.dp, vertical = 14.dp)) {
+    Surface(color = cs.surfaceContainer, shape = uiCardShape(), modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = uiGap() + 6.dp)) {
+        Column(Modifier.padding(horizontal = 18.dp, vertical = uiRowPad() + 0.dp)) {
             if (state.activeName != null) {
                 val rowModifier = if (onSwitchModel != null) {
                     Modifier.fillMaxWidth().testTag("scrib/home/active_model").clickableRow(RoundedCornerShape(12.dp), onSwitchModel)
@@ -1215,7 +1237,7 @@ private fun StatusCard(state: ScribUiState, onOpenSettings: (() -> Unit)? = null
 private fun NudgeCard(state: ScribUiState, actions: Actions, onOpenSettings: (() -> Unit)? = null) {
     val cs = MaterialTheme.colorScheme
     val base = state.standard.firstOrNull { it.recommended }
-    Surface(color = cs.primaryContainer, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 16.dp)) {
+    Surface(color = cs.primaryContainer, shape = uiCardShape(), modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = uiGap() + 6.dp)) {
         Column(Modifier.padding(horizontal = 18.dp, vertical = 20.dp)) {
             Text(stringResource(R.string.setup_transcription), fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = cs.onPrimaryContainer)
             Text(
@@ -1363,7 +1385,7 @@ internal fun ModelRowCard(row: ModelRow, actions: Actions, onRequestDelete: (Str
         border = BorderStroke(if (active) 1.5.dp else 1.dp, if (active) cs.primary else cs.outlineVariant),
         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
     ) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = uiRowPad() + 0.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Column(Modifier.weight(1f)) {
                     @OptIn(ExperimentalLayoutApi::class)
@@ -1462,10 +1484,10 @@ private fun Chip(text: String, bg: Color, fg: Color, onClick: () -> Unit) {
 private fun AddButton(glyph: String, label: String, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Surface(
-        color = cs.surface, shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, cs.outline),
-        modifier = Modifier.fillMaxWidth().clickableRow(RoundedCornerShape(16.dp), onClick)
+        color = cs.surface, shape = uiCardShape(), border = BorderStroke(1.dp, cs.outline),
+        modifier = Modifier.fillMaxWidth().clickableRow(uiCardShape(), onClick)
     ) {
-        Row(Modifier.padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.padding(horizontal = 18.dp, vertical = uiRowPad() + 0.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(glyph, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = cs.primary)
             Text(label, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
         }
@@ -1492,15 +1514,15 @@ private fun StatusBox(msg: String, error: Boolean) {
 private fun RecordButton(onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Surface(
-        color = cs.primary, shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
-            .testTag("scrib/record/button").clickableRow(RoundedCornerShape(16.dp), onClick)
+        color = cs.primary, shape = uiCardShape(),
+        modifier = Modifier.fillMaxWidth().padding(bottom = uiGap())
+            .testTag("scrib/record/button").clickableRow(uiCardShape(), onClick)
     ) {
         Row(
-            Modifier.padding(horizontal = 16.dp, vertical = 15.dp),
+            Modifier.padding(horizontal = 16.dp, vertical = uiRowPad() + 1.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center
         ) {
-            Box(Modifier.size(10.dp).clip(RoundedCornerShape(50)).background(cs.onPrimary))
+            RecordDot(cs.onPrimary)
             Spacer(Modifier.width(10.dp))
             Text(stringResource(R.string.record_and_transcribe), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cs.onPrimary)
         }
@@ -1565,12 +1587,12 @@ private fun elapsed(ms: Long): String {
 private fun TranscribeFileButton(onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Surface(
-        color = cs.primaryContainer, shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp)
-            .testTag("scrib/transcribe/pick_file").clickableRow(RoundedCornerShape(16.dp), onClick)
+        color = cs.primaryContainer, shape = uiCardShape(),
+        modifier = Modifier.fillMaxWidth().padding(bottom = uiGap() + 4.dp)
+            .testTag("scrib/transcribe/pick_file").clickableRow(uiCardShape(), onClick)
     ) {
         Row(
-            Modifier.padding(horizontal = 16.dp, vertical = 15.dp),
+            Modifier.padding(horizontal = 16.dp, vertical = uiRowPad() + 1.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center
         ) {
             Text(stringResource(R.string.transcribe_audio_file), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cs.onPrimaryContainer)
@@ -1943,7 +1965,7 @@ private fun KeepScreenRow() {
             stringResource(R.string.keep_screen_title),
             fontSize = 12.5.sp, color = cs.onSurface, modifier = Modifier.weight(1f)
         )
-        Switch(
+        IosSwitch(
             checked = config.keepScreenOn,
             onCheckedChange = { on -> AlarmSettings.update(context) { it.copy(keepScreenOn = on) } }
         )
@@ -2020,20 +2042,18 @@ private fun FormatPicker(selected: TranscriptFormat, onSelect: (TranscriptFormat
 private fun LanguageEntry(onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Surface(
-        color = cs.surfaceContainer, shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp).clickableRow(RoundedCornerShape(16.dp), onClick)
+        color = cs.surfaceContainer, shape = uiCardShape(),
+        modifier = Modifier.fillMaxWidth().padding(bottom = uiGap() + 4.dp).clickableRow(uiCardShape(), onClick)
     ) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
-                Text("🌐", fontSize = 18.sp)
-            }
+        Row(Modifier.padding(horizontal = 16.dp, vertical = uiRowPad() + 0.dp), verticalAlignment = Alignment.CenterVertically) {
+            EntryGlyph("🌐")
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(stringResource(R.string.lang_entry_title), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
                 Text(stringResource(R.string.lang_entry_sub), fontSize = 12.sp, fontWeight = FontWeight.Medium, color = cs.onSurfaceVariant, lineHeight = 16.sp)
             }
             Spacer(Modifier.width(16.dp))
-            Text("›", fontSize = 22.sp, color = cs.onSurfaceVariant)
+            EntryChevron()
         }
     }
 }
@@ -2047,14 +2067,12 @@ private fun SkipSilenceEntry(state: ScribUiState, onToggle: (Boolean) -> Unit) {
     val busy = state.vadProgress >= 0
     val usable = state.vadSupported
     Surface(
-        color = cs.surfaceContainer, shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
-            .clickableRow(RoundedCornerShape(16.dp)) { if (!busy && usable) onToggle(!state.skipSilence) }
+        color = cs.surfaceContainer, shape = uiCardShape(),
+        modifier = Modifier.fillMaxWidth().padding(bottom = uiGap())
+            .clickableRow(uiCardShape()) { if (!busy && usable) onToggle(!state.skipSilence) }
     ) {
-        Row(Modifier.padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
-                Text("🤫", fontSize = 18.sp)
-            }
+        Row(Modifier.padding(start = 16.dp, end = 12.dp, top = uiRowPad(), bottom = uiRowPad()), verticalAlignment = Alignment.CenterVertically) {
+            EntryGlyph("🤫")
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(stringResource(R.string.vad_entry_title), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (usable) cs.onSurface else cs.onSurfaceVariant)
@@ -2068,7 +2086,7 @@ private fun SkipSilenceEntry(state: ScribUiState, onToggle: (Boolean) -> Unit) {
                 )
             }
             Spacer(Modifier.width(8.dp))
-            Switch(checked = state.skipSilence && usable, enabled = !busy && usable, onCheckedChange = { onToggle(it) })
+            IosSwitch(checked = state.skipSilence && usable, enabled = !busy && usable, onCheckedChange = { onToggle(it) })
         }
     }
 }
@@ -2083,16 +2101,14 @@ private fun KeepScreenEntry() {
     val context = LocalContext.current
     val config by AlarmSettings.flow(context).collectAsState()
     Surface(
-        color = cs.surfaceContainer, shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
-            .clickableRow(RoundedCornerShape(16.dp)) {
+        color = cs.surfaceContainer, shape = uiCardShape(),
+        modifier = Modifier.fillMaxWidth().padding(bottom = uiGap())
+            .clickableRow(uiCardShape()) {
                 AlarmSettings.update(context) { it.copy(keepScreenOn = !config.keepScreenOn) }
             }
     ) {
-        Row(Modifier.padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
-                Text("💡", fontSize = 18.sp)
-            }
+        Row(Modifier.padding(start = 16.dp, end = 12.dp, top = uiRowPad(), bottom = uiRowPad()), verticalAlignment = Alignment.CenterVertically) {
+            EntryGlyph("💡")
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(stringResource(R.string.keep_screen_title), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
@@ -2102,7 +2118,7 @@ private fun KeepScreenEntry() {
                 )
             }
             Spacer(Modifier.width(8.dp))
-            Switch(
+            IosSwitch(
                 checked = config.keepScreenOn,
                 onCheckedChange = { on -> AlarmSettings.update(context) { it.copy(keepScreenOn = on) } }
             )
@@ -2116,19 +2132,17 @@ private fun AlarmEntry() {
     val context = LocalContext.current
     val config by AlarmSettings.flow(context).collectAsState()
     Surface(
-        color = cs.surfaceContainer, shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
+        color = cs.surfaceContainer, shape = uiCardShape(),
+        modifier = Modifier.fillMaxWidth().padding(bottom = uiGap())
     ) {
-        Column(Modifier.padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 14.dp)) {
+        Column(Modifier.padding(start = 16.dp, end = 12.dp, top = uiRowPad(), bottom = uiRowPad())) {
             Row(
                 Modifier.fillMaxWidth().clickableRow(RoundedCornerShape(12.dp)) {
                     AlarmSettings.update(context) { it.copy(enabled = !config.enabled) }
                 },
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
-                    Text("🔔", fontSize = 18.sp)
-                }
+                EntryGlyph("🔔")
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(stringResource(R.string.alarm_title), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
@@ -2138,7 +2152,7 @@ private fun AlarmEntry() {
                     )
                 }
                 Spacer(Modifier.width(8.dp))
-                Switch(
+                IosSwitch(
                     checked = config.enabled,
                     onCheckedChange = { on -> AlarmSettings.update(context) { it.copy(enabled = on) } }
                 )
@@ -2268,14 +2282,12 @@ private fun AlarmChip(label: String, selected: Boolean, onClick: () -> Unit) {
 private fun LiveStatsEntry(enabled: Boolean, onToggle: (Boolean) -> Unit) {
     val cs = MaterialTheme.colorScheme
     Surface(
-        color = cs.surfaceContainer, shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
-            .clickableRow(RoundedCornerShape(16.dp)) { onToggle(!enabled) }
+        color = cs.surfaceContainer, shape = uiCardShape(),
+        modifier = Modifier.fillMaxWidth().padding(bottom = uiGap())
+            .clickableRow(uiCardShape()) { onToggle(!enabled) }
     ) {
-        Row(Modifier.padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
-                Text("📈", fontSize = 18.sp)
-            }
+        Row(Modifier.padding(start = 16.dp, end = 12.dp, top = uiRowPad(), bottom = uiRowPad()), verticalAlignment = Alignment.CenterVertically) {
+            EntryGlyph("📈")
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(stringResource(R.string.live_stats_entry_title), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
@@ -2286,7 +2298,7 @@ private fun LiveStatsEntry(enabled: Boolean, onToggle: (Boolean) -> Unit) {
                 )
             }
             Spacer(Modifier.width(8.dp))
-            Switch(checked = enabled, onCheckedChange = { onToggle(it) })
+            IosSwitch(checked = enabled, onCheckedChange = { onToggle(it) })
         }
     }
 }
@@ -2294,14 +2306,12 @@ private fun LiveStatsEntry(enabled: Boolean, onToggle: (Boolean) -> Unit) {
 private fun KeyboardStatsEntry(state: ScribUiState, onToggle: (Boolean) -> Unit) {
     val cs = MaterialTheme.colorScheme
     Surface(
-        color = cs.surfaceContainer, shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
-            .clickableRow(RoundedCornerShape(16.dp)) { onToggle(!state.keyboardStats) }
+        color = cs.surfaceContainer, shape = uiCardShape(),
+        modifier = Modifier.fillMaxWidth().padding(bottom = uiGap())
+            .clickableRow(uiCardShape()) { onToggle(!state.keyboardStats) }
     ) {
-        Row(Modifier.padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
-                Text("📊", fontSize = 18.sp)
-            }
+        Row(Modifier.padding(start = 16.dp, end = 12.dp, top = uiRowPad(), bottom = uiRowPad()), verticalAlignment = Alignment.CenterVertically) {
+            EntryGlyph("📊")
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(stringResource(R.string.ime_stats_title), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
@@ -2316,7 +2326,7 @@ private fun KeyboardStatsEntry(state: ScribUiState, onToggle: (Boolean) -> Unit)
                 )
             }
             Spacer(Modifier.width(8.dp))
-            Switch(checked = state.keyboardStats, onCheckedChange = { onToggle(it) })
+            IosSwitch(checked = state.keyboardStats, onCheckedChange = { onToggle(it) })
         }
     }
 }
@@ -2324,13 +2334,11 @@ private fun KeyboardStatsEntry(state: ScribUiState, onToggle: (Boolean) -> Unit)
 private fun DictionaryEntry(enabled: Boolean, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Surface(
-        color = cs.surfaceContainer, shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clickableRow(RoundedCornerShape(16.dp), onClick)
+        color = cs.surfaceContainer, shape = uiCardShape(),
+        modifier = Modifier.fillMaxWidth().padding(bottom = uiGap()).clickableRow(uiCardShape(), onClick)
     ) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
-                Text("\uD83D\uDCDD", fontSize = 18.sp)
-            }
+        Row(Modifier.padding(horizontal = 16.dp, vertical = uiRowPad() + 0.dp), verticalAlignment = Alignment.CenterVertically) {
+            EntryGlyph("\uD83D\uDCDD")
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(stringResource(R.string.dict_entry_title), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
@@ -2340,7 +2348,7 @@ private fun DictionaryEntry(enabled: Boolean, onClick: () -> Unit) {
                 )
             }
             Spacer(Modifier.width(16.dp))
-            Text("›", fontSize = 22.sp, color = cs.onSurfaceVariant)
+            EntryChevron()
         }
     }
 }
@@ -2361,10 +2369,10 @@ private fun BenchmarkEntry(runs: List<BenchmarkRun>, onClick: () -> Unit) {
     }
     Surface(
         color = cs.surfaceContainer,
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clickableRow(RoundedCornerShape(16.dp), onClick)
+        shape = uiCardShape(),
+        modifier = Modifier.fillMaxWidth().padding(bottom = uiGap()).clickableRow(uiCardShape(), onClick)
     ) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = uiRowPad() + 0.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
                 Text("↗", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = cs.primary)
             }
@@ -2374,7 +2382,7 @@ private fun BenchmarkEntry(runs: List<BenchmarkRun>, onClick: () -> Unit) {
                 Text(subtitle, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = cs.onSurfaceVariant, lineHeight = 16.sp)
             }
             Spacer(Modifier.width(16.dp))
-            Text("›", fontSize = 22.sp, color = cs.onSurfaceVariant)
+            EntryChevron()
         }
     }
 }
@@ -2384,10 +2392,10 @@ private fun EtaHistoryEntry(onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Surface(
         color = cs.surfaceContainer,
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clickableRow(RoundedCornerShape(16.dp), onClick)
+        shape = uiCardShape(),
+        modifier = Modifier.fillMaxWidth().padding(bottom = uiGap()).clickableRow(uiCardShape(), onClick)
     ) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = uiRowPad() + 0.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
                 Text("≈", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = cs.primary)
             }
@@ -2400,7 +2408,7 @@ private fun EtaHistoryEntry(onClick: () -> Unit) {
                 )
             }
             Spacer(Modifier.width(16.dp))
-            Text("›", fontSize = 22.sp, color = cs.onSurfaceVariant)
+            EntryChevron()
         }
     }
 }
@@ -2550,20 +2558,18 @@ private fun WhatsNewDialog(release: Changelog.Release, onClose: () -> Unit) {
 private fun ChangelogEntry(onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Surface(
-        color = cs.surfaceContainer, shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clickableRow(RoundedCornerShape(16.dp), onClick)
+        color = cs.surfaceContainer, shape = uiCardShape(),
+        modifier = Modifier.fillMaxWidth().padding(bottom = uiGap()).clickableRow(uiCardShape(), onClick)
     ) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
-                Text("✨", fontSize = 18.sp)
-            }
+        Row(Modifier.padding(horizontal = 16.dp, vertical = uiRowPad() + 0.dp), verticalAlignment = Alignment.CenterVertically) {
+            EntryGlyph("✨")
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(stringResource(R.string.whats_new_entry_title), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
                 Text(stringResource(R.string.whats_new_entry_sub), fontSize = 12.sp, fontWeight = FontWeight.Medium, color = cs.onSurfaceVariant, lineHeight = 16.sp)
             }
             Spacer(Modifier.width(16.dp))
-            Text("›", fontSize = 22.sp, color = cs.onSurfaceVariant)
+            EntryChevron()
         }
     }
 }
