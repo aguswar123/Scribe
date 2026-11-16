@@ -12,9 +12,6 @@ enum class BarOutlineColor { DEFAULT, ACCENT, TEXT }
 // An empty label means "use the app's own (translated) name for the tab".
 data class NewUiConfig(
     val enabled: Boolean = false,
-    val iosStyle: Boolean = true,
-    val showTitles: Boolean = true,
-    val densityPct: Int = 88,
     val newBar: Boolean = false,
     val showTranscribeTab: Boolean = true,
     val display: BarDisplay = BarDisplay.BOTH,
@@ -71,9 +68,6 @@ object NewUiSettings {
         _config.value = next
         val edit = prefs(context).edit()
             .putBoolean("enabled", next.enabled)
-            .putBoolean("iosStyle", next.iosStyle)
-            .putBoolean("showTitles", next.showTitles)
-            .putInt("density", next.densityPct)
             .putBoolean("newBar", next.newBar)
             .putBoolean("showTranscribe", next.showTranscribeTab)
             .putString("display", next.display.name)
@@ -95,7 +89,6 @@ object NewUiSettings {
     }
 
     private fun clamp(c: NewUiConfig) = c.copy(
-        densityPct = c.densityPct.coerceIn(75, 100),
         heightDp = c.heightDp.coerceIn(44, 96),
         sideMarginDp = c.sideMarginDp.coerceIn(0, 32),
         bottomMarginDp = c.bottomMarginDp.coerceIn(0, 40),
@@ -119,9 +112,6 @@ object NewUiSettings {
         _config.value = clamp(
             NewUiConfig(
                 enabled = p.getBoolean("enabled", d.enabled),
-                iosStyle = p.getBoolean("iosStyle", d.iosStyle),
-                showTitles = p.getBoolean("showTitles", d.showTitles),
-                densityPct = p.getInt("density", d.densityPct),
                 newBar = p.getBoolean("newBar", d.newBar),
                 showTranscribeTab = p.getBoolean("showTranscribe", d.showTranscribeTab),
                 display = runCatching { BarDisplay.valueOf(p.getString("display", null) ?: "") }.getOrDefault(d.display),

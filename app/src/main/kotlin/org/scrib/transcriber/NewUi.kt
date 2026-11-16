@@ -151,23 +151,25 @@ private fun RowScope.NewBarTab(config: NewUiConfig, item: NewBarItem, index: Int
 fun NewUiEntry(config: NewUiConfig, onToggle: (Boolean) -> Unit, onOpen: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Surface(
-        color = cs.surfaceContainer, shape = uiCardShape(),
-        modifier = Modifier.fillMaxWidth().padding(bottom = uiGap())
+        color = cs.surfaceContainer, shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
     ) {
-        Row(Modifier.padding(start = 16.dp, end = 12.dp, top = uiRowPad() - 6.dp, bottom = uiRowPad() - 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            EntryGlyph("\u2728")
+        Row(Modifier.padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+                Text("✨", fontSize = 18.sp)
+            }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text("New UI", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
                 Text(
-                    "iOS-style compact screens and bar. Hides the top bar.",
+                    "Floating bar and a cleaner screen. Hides the top bar.",
                     fontSize = 12.sp, fontWeight = FontWeight.Medium, color = cs.onSurfaceVariant, lineHeight = 16.sp
                 )
             }
             if (config.enabled) {
                 TextButton(onClick = onOpen) { Text("Open ›", fontWeight = FontWeight.SemiBold) }
             }
-            IosSwitch(checked = config.enabled, onCheckedChange = onToggle)
+            Switch(checked = config.enabled, onCheckedChange = onToggle)
         }
     }
 }
@@ -176,19 +178,21 @@ fun NewUiEntry(config: NewUiConfig, onToggle: (Boolean) -> Unit, onOpen: () -> U
 @Composable
 fun AboutEntry(onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    val shape = uiCardShape()
+    val shape = RoundedCornerShape(16.dp)
     Surface(
         color = cs.surfaceContainer, shape = shape,
-        modifier = Modifier.fillMaxWidth().padding(bottom = uiGap()).clip(shape).clickable(onClick = onClick)
+        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(shape).clickable(onClick = onClick)
     ) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = uiRowPad()), verticalAlignment = Alignment.CenterVertically) {
-            EntryGlyph("\u24D8")
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+                Text("ⓘ", fontSize = 18.sp, color = cs.primary)
+            }
             Spacer(Modifier.width(12.dp))
             Text(
                 androidx.compose.ui.res.stringResource(R.string.about),
                 fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.onSurface, modifier = Modifier.weight(1f)
             )
-            EntryChevron()
+            Text("›", fontSize = 22.sp, color = cs.onSurfaceVariant)
         }
     }
 }
@@ -233,20 +237,6 @@ private fun SliderRow(label: String, value: Int, min: Int, max: Int, unit: Strin
 }
 
 @Composable
-private fun ToggleCard(title: String, sub: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    Surface(color = cs.surfaceContainer, shape = uiCardShape(), modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
-                Text(sub, fontSize = 12.sp, color = cs.onSurfaceVariant)
-            }
-            IosSwitch(checked = checked, onCheckedChange = onChange)
-        }
-    }
-}
-
-@Composable
 fun NewUiDialog(items: List<NewBarItem>, onDismiss: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val context = LocalContext.current
@@ -279,12 +269,6 @@ fun NewUiDialog(items: List<NewBarItem>, onDismiss: () -> Unit) {
                     }
                 }
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-                    SectionLabel("Style")
-                    ToggleCard("iOS style", "Blue accent, green switches, light grey page", config.iosStyle) { on -> change { it.copy(iosStyle = on) } }
-                    Spacer(Modifier.height(8.dp))
-                    ToggleCard("Screen titles", "Large title at the top of each screen", config.showTitles) { on -> change { it.copy(showTitles = on) } }
-                    SliderRow("Compact level", config.densityPct, 75, 100, "%") { v -> change { it.copy(densityPct = v) } }
-                    SectionLabel("Bottom bar")
                     Spacer(Modifier.height(12.dp))
                     Surface(color = cs.surfaceContainer, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -292,7 +276,7 @@ fun NewUiDialog(items: List<NewBarItem>, onDismiss: () -> Unit) {
                                 Text("New bar style", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
                                 Text("Floating bottom bar", fontSize = 12.sp, color = cs.onSurfaceVariant)
                             }
-                            IosSwitch(checked = config.newBar, onCheckedChange = { on -> change { it.copy(newBar = on) } })
+                            Switch(checked = config.newBar, onCheckedChange = { on -> change { it.copy(newBar = on) } })
                         }
                     }
                     if (config.newBar) {
@@ -303,7 +287,7 @@ fun NewUiDialog(items: List<NewBarItem>, onDismiss: () -> Unit) {
                                     Text("Transcribe tab", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
                                     Text("Turn off to hide it. It is also in Home.", fontSize = 12.sp, color = cs.onSurfaceVariant)
                                 }
-                                IosSwitch(checked = config.showTranscribeTab, onCheckedChange = { on -> change { it.copy(showTranscribeTab = on) } })
+                                Switch(checked = config.showTranscribeTab, onCheckedChange = { on -> change { it.copy(showTranscribeTab = on) } })
                             }
                         }
                         SectionLabel("Show in bar")
@@ -361,7 +345,7 @@ fun NewUiDialog(items: List<NewBarItem>, onDismiss: () -> Unit) {
                             fontSize = 11.5.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, top = 2.dp)
                         )
                         TextButton(onClick = {
-                            change { NewUiConfig(enabled = it.enabled, newBar = it.newBar, iosStyle = it.iosStyle, showTitles = it.showTitles, densityPct = it.densityPct) }
+                            change { NewUiConfig(enabled = it.enabled, newBar = it.newBar) }
                             resetCount++
                         }) {
                             Text("Reset bar to default", fontWeight = FontWeight.SemiBold)

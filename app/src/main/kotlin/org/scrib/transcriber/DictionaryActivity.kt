@@ -74,7 +74,7 @@ class DictionaryActivity : ComponentActivity() {
                                 color = MaterialTheme.colorScheme.onBackground,
                                 modifier = Modifier.weight(1f)
                             )
-                            IosSwitch(checked = enabled, onCheckedChange = { enabled = it })
+                            Switch(checked = enabled, onCheckedChange = { enabled = it })
                         }
                         Spacer(Modifier.height(8.dp))
                         Text(
