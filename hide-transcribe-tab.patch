@@ -1,0 +1,67 @@
+diff --git a/app/src/main/kotlin/org/scrib/transcriber/NewUi.kt b/app/src/main/kotlin/org/scrib/transcriber/NewUi.kt
+index 52bbaec..6b4c942 100644
+--- a/app/src/main/kotlin/org/scrib/transcriber/NewUi.kt
++++ b/app/src/main/kotlin/org/scrib/transcriber/NewUi.kt
+@@ -96,6 +96,7 @@ fun NewBar(
+             .padding(horizontal = config.paddingDp.dp)
+     ) {
+         items.forEachIndexed { index, item ->
++            if (index == NewUiConfig.TRANSCRIBE_INDEX && !config.showTranscribeTab) return@forEachIndexed
+             NewBarTab(config, item, index, index == selected) { onSelect(index) }
+         }
+     }
+@@ -279,6 +280,16 @@ fun NewUiDialog(items: List<NewBarItem>, onDismiss: () -> Unit) {
+                         }
+                     }
+                     if (config.newBar) {
++                        SectionLabel("Tabs in bar")
++                        Surface(color = cs.surfaceContainer, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
++                            Row(Modifier.padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
++                                Column(Modifier.weight(1f)) {
++                                    Text("Transcribe tab", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
++                                    Text("Turn off to hide it. It is also in Home.", fontSize = 12.sp, color = cs.onSurfaceVariant)
++                                }
++                                Switch(checked = config.showTranscribeTab, onCheckedChange = { on -> change { it.copy(showTranscribeTab = on) } })
++                            }
++                        }
+                         SectionLabel("Show in bar")
+                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                             BarChip("Icon + text", config.display == BarDisplay.BOTH) { change { it.copy(display = BarDisplay.BOTH) } }
+diff --git a/app/src/main/kotlin/org/scrib/transcriber/NewUiSettings.kt b/app/src/main/kotlin/org/scrib/transcriber/NewUiSettings.kt
+index 0bfa792..46fd163 100644
+--- a/app/src/main/kotlin/org/scrib/transcriber/NewUiSettings.kt
++++ b/app/src/main/kotlin/org/scrib/transcriber/NewUiSettings.kt
+@@ -13,6 +13,7 @@ enum class BarOutlineColor { DEFAULT, ACCENT, TEXT }
+ data class NewUiConfig(
+     val enabled: Boolean = false,
+     val newBar: Boolean = false,
++    val showTranscribeTab: Boolean = true,
+     val display: BarDisplay = BarDisplay.BOTH,
+     val heightDp: Int = 64,
+     val sideMarginDp: Int = 16,
+@@ -37,6 +38,9 @@ data class NewUiConfig(
+     companion object {
+         const val TAB_COUNT = 5
+ 
++        // Position of the Transcribe tab, the one that can be taken out of the bar.
++        const val TRANSCRIBE_INDEX = 2
++
+         // Lucide names, in the order of the tabs: Home, Record, Transcribe, Keyboard, Settings.
+         val DEFAULT_ICONS = listOf("house", "mic", "audio-lines", "keyboard", "settings")
+     }
+@@ -65,6 +69,7 @@ object NewUiSettings {
+         val edit = prefs(context).edit()
+             .putBoolean("enabled", next.enabled)
+             .putBoolean("newBar", next.newBar)
++            .putBoolean("showTranscribe", next.showTranscribeTab)
+             .putString("display", next.display.name)
+             .putInt("height", next.heightDp)
+             .putInt("sideMargin", next.sideMarginDp)
+@@ -108,6 +113,7 @@ object NewUiSettings {
+             NewUiConfig(
+                 enabled = p.getBoolean("enabled", d.enabled),
+                 newBar = p.getBoolean("newBar", d.newBar),
++                showTranscribeTab = p.getBoolean("showTranscribe", d.showTranscribeTab),
+                 display = runCatching { BarDisplay.valueOf(p.getString("display", null) ?: "") }.getOrDefault(d.display),
+                 heightDp = p.getInt("height", d.heightDp),
+                 sideMarginDp = p.getInt("sideMargin", d.sideMarginDp),
