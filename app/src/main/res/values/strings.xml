@@ -77,6 +77,22 @@
     <string name="benchmark_batch_cancelled">Benchmark cancelled: completed %1$d/%2$d.</string>
     <string name="eta_minutes">about %1$d min left</string>
     <string name="eta_seconds">about %1$d sec left</string>
+    <string name="alarm_title" translatable="false">Alarm</string>
+    <string name="alarm_sub_off" translatable="false">Beep when a file finishes.</string>
+    <string name="alarm_sub_on" translatable="false">Beep for each file, a different one when all are done</string>
+    <string name="alarm_sound_file" translatable="false">Sound when each file finishes</string>
+    <string name="alarm_sound_all" translatable="false">Sound when everything is done</string>
+    <string name="alarm_times" translatable="false">Times to play</string>
+    <string name="alarm_times_value" translatable="false">%1$d×</string>
+    <string name="alarm_system" translatable="false">Phone sound…</string>
+    <string name="alarm_system_named" translatable="false">Phone: %1$s</string>
+    <string name="alarm_beep" translatable="false">Beep</string>
+    <string name="alarm_double" translatable="false">Double</string>
+    <string name="alarm_triple" translatable="false">Triple</string>
+    <string name="alarm_rising" translatable="false">Rising</string>
+    <string name="alarm_long" translatable="false">Long</string>
+    <string name="keep_screen_title" translatable="false">Keep screen on</string>
+    <string name="keep_screen_sub" translatable="false">Keeps the screen on while transcribing. It turns off normally when finished.</string>
     <string name="eta_this_file" translatable="false">This file</string>
     <string name="eta_all_remaining" translatable="false">All %1$d remaining files</string>
     <string name="eta_calculating" translatable="false">calculating…</string>

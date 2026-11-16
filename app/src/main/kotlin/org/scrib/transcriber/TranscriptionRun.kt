@@ -418,8 +418,13 @@ object TranscriptionRun {
             if (next == null) {
                 batchQueue.clear()
                 batchTotal = 0
+                // The last file, or the only one: the run is over. A cancel is the person's own doing.
+                if (last != TranscriptionRunResult.CANCELLED) AlarmPlayer.finished(context, allDone = true)
                 return
             }
+            // One more file is coming, so this is the "next file done" sound. A file that failed
+            // stays quiet; the run carries on and the end sounds regardless.
+            if (last == TranscriptionRunResult.SUCCESS) AlarmPlayer.finished(context, allDone = false)
             batchPosition += 1
             startInternal(
                 context, next.uri, next.name, next.uri,

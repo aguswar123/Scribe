@@ -2,6 +2,7 @@ package org.scrib.transcriber
 
 import android.content.Context
 import android.content.Intent
+import android.media.RingtoneManager
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
@@ -57,6 +58,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -75,6 +78,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -198,6 +202,14 @@ fun ScribScreen(
     // shows. A refusal costs the notification, not the run.
     val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     val started = transcription != null && !state.benchmarkBatch.running
+    // The screen stays lit for as long as a run is going and goes back to its own timeout after.
+    val alarmConfig by AlarmSettings.flow(context).collectAsState()
+    val view = LocalView.current
+    val keepScreenOn = alarmConfig.keepScreenOn && transcription?.running == true
+    DisposableEffect(keepScreenOn) {
+        view.keepScreenOn = keepScreenOn
+        onDispose { view.keepScreenOn = false }
+    }
     LaunchedEffect(started) {
         if (started && android.os.Build.VERSION.SDK_INT >= 33) {
             notifications.launch(android.Manifest.permission.POST_NOTIFICATIONS)
@@ -987,6 +999,8 @@ private fun SettingsTab(
         item { LiveStatsEntry(state.liveStats, onLiveStats) }
         item { KeyboardStatsEntry(state, onKeyboardStats) }
         item { DictionaryEntry(state.dictionaryEnabled, onOpenDictionary) }
+        item { AlarmEntry() }
+        item { KeepScreenEntry() }
         if (BuildConfig.LOCAL_MODELS) {
             item { BenchmarkEntry(state.benchmarkRuns, onOpenBenchmarks) }
         }
@@ -1867,6 +1881,7 @@ private fun RunProgress(t: TranscribeUi, showStats: Boolean) {
             )
         }
         EtaRows(t)
+        KeepScreenRow()
         if (showStats && t.metrics.hasData) {
             Spacer(Modifier.height(6.dp))
             StatsLine(t)
@@ -1875,6 +1890,24 @@ private fun RunProgress(t: TranscribeUi, showStats: Boolean) {
         Text(
             stringResource(R.string.transcribe_background_hint),
             fontSize = 11.5.sp, color = cs.onSurfaceVariant, lineHeight = 16.sp
+        )
+    }
+}
+
+// The same setting as the one in Settings, so the two never disagree.
+@Composable
+private fun KeepScreenRow() {
+    val cs = MaterialTheme.colorScheme
+    val context = LocalContext.current
+    val config by AlarmSettings.flow(context).collectAsState()
+    Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            stringResource(R.string.keep_screen_title),
+            fontSize = 12.5.sp, color = cs.onSurface, modifier = Modifier.weight(1f)
+        )
+        Switch(
+            checked = config.keepScreenOn,
+            onCheckedChange = { on -> AlarmSettings.update(context) { it.copy(keepScreenOn = on) } }
         )
     }
 }
@@ -2004,6 +2037,193 @@ private fun SkipSilenceEntry(state: ScribUiState, onToggle: (Boolean) -> Unit) {
 // model is loaded and the phone is already the tightest it will be. It buys the live speed and
 // memory figures, so it stays on by default — but it is the one moving part a user may want to
 // weigh against the run, and a phone with little to spare may rather not pay for it at all.
+@Composable
+private fun KeepScreenEntry() {
+    val cs = MaterialTheme.colorScheme
+    val context = LocalContext.current
+    val config by AlarmSettings.flow(context).collectAsState()
+    Surface(
+        color = cs.surfaceContainer, shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
+            .clickableRow(RoundedCornerShape(16.dp)) {
+                AlarmSettings.update(context) { it.copy(keepScreenOn = !config.keepScreenOn) }
+            }
+    ) {
+        Row(Modifier.padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+                Text("💡", fontSize = 18.sp)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.keep_screen_title), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
+                Text(
+                    stringResource(R.string.keep_screen_sub),
+                    fontSize = 12.sp, fontWeight = FontWeight.Medium, color = cs.onSurfaceVariant, lineHeight = 16.sp
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Switch(
+                checked = config.keepScreenOn,
+                onCheckedChange = { on -> AlarmSettings.update(context) { it.copy(keepScreenOn = on) } }
+            )
+        }
+    }
+}
+
+@Composable
+private fun AlarmEntry() {
+    val cs = MaterialTheme.colorScheme
+    val context = LocalContext.current
+    val config by AlarmSettings.flow(context).collectAsState()
+    Surface(
+        color = cs.surfaceContainer, shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
+    ) {
+        Column(Modifier.padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 14.dp)) {
+            Row(
+                Modifier.fillMaxWidth().clickableRow(RoundedCornerShape(12.dp)) {
+                    AlarmSettings.update(context) { it.copy(enabled = !config.enabled) }
+                },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+                    Text("🔔", fontSize = 18.sp)
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.alarm_title), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
+                    Text(
+                        if (config.enabled) stringResource(R.string.alarm_sub_on) else stringResource(R.string.alarm_sub_off),
+                        fontSize = 12.sp, fontWeight = FontWeight.Medium, color = cs.onSurfaceVariant, lineHeight = 16.sp
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Switch(
+                    checked = config.enabled,
+                    onCheckedChange = { on -> AlarmSettings.update(context) { it.copy(enabled = on) } }
+                )
+            }
+            if (config.enabled) {
+                AlarmSoundPicker(
+                    title = stringResource(R.string.alarm_sound_file),
+                    sound = config.fileSound,
+                    times = config.fileTimes,
+                    onSound = { s ->
+                        AlarmSettings.update(context) { it.copy(fileSound = s) }
+                        AlarmPlayer.play(context, s, config.fileTimes)
+                    },
+                    onTimes = { n ->
+                        AlarmSettings.update(context) { it.copy(fileTimes = n) }
+                        AlarmPlayer.play(context, config.fileSound, n)
+                    }
+                )
+                AlarmSoundPicker(
+                    title = stringResource(R.string.alarm_sound_all),
+                    sound = config.allSound,
+                    times = config.allTimes,
+                    onSound = { s ->
+                        AlarmSettings.update(context) { it.copy(allSound = s) }
+                        AlarmPlayer.play(context, s, config.allTimes)
+                    },
+                    onTimes = { n ->
+                        AlarmSettings.update(context) { it.copy(allTimes = n) }
+                        AlarmPlayer.play(context, config.allSound, n)
+                    }
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AlarmSoundPicker(
+    title: String,
+    sound: String,
+    times: Int,
+    onSound: (String) -> Unit,
+    onTimes: (Int) -> Unit
+) {
+    val cs = MaterialTheme.colorScheme
+    val context = LocalContext.current
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            @Suppress("DEPRECATION")
+            val uri = result.data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+            if (uri != null) onSound(AlarmPlayer.systemId(uri))
+        }
+    }
+    val builtInNames = mapOf(
+        AlarmPlayer.BEEP to stringResource(R.string.alarm_beep),
+        AlarmPlayer.DOUBLE to stringResource(R.string.alarm_double),
+        AlarmPlayer.TRIPLE to stringResource(R.string.alarm_triple),
+        AlarmPlayer.RISING to stringResource(R.string.alarm_rising),
+        AlarmPlayer.LONG to stringResource(R.string.alarm_long)
+    )
+    val systemSelected = AlarmPlayer.isSystem(sound)
+    val systemTitle = remember(sound) {
+        if (AlarmPlayer.isSystem(sound)) AlarmPlayer.systemTitle(context, sound) else null
+    }
+    Column(Modifier.padding(top = 14.dp)) {
+        Text(title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = cs.onSurfaceVariant)
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+        ) {
+            AlarmPlayer.builtIn.forEach { id ->
+                AlarmChip(builtInNames[id] ?: id, sound == id) { onSound(id) }
+            }
+            AlarmChip(
+                if (systemTitle != null) stringResource(R.string.alarm_system_named, systemTitle)
+                else stringResource(R.string.alarm_system),
+                systemSelected
+            ) {
+                val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER)
+                    .putExtra(
+                        RingtoneManager.EXTRA_RINGTONE_TYPE,
+                        RingtoneManager.TYPE_NOTIFICATION or RingtoneManager.TYPE_ALARM
+                    )
+                    .putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                    .putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+                runCatching { picker.launch(intent) }
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                stringResource(R.string.alarm_times),
+                fontSize = 12.5.sp, color = cs.onSurfaceVariant, modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = { onTimes(times - 1) }, enabled = times > 1) {
+                Text("−", fontSize = 18.sp)
+            }
+            Text(
+                stringResource(R.string.alarm_times_value, times),
+                fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = cs.onSurface
+            )
+            TextButton(onClick = { onTimes(times + 1) }, enabled = times < AlarmSettings.MAX_TIMES) {
+                Text("+", fontSize = 18.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlarmChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Surface(
+        color = if (selected) cs.primary else cs.surfaceContainerHighest,
+        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier.clickableRow(RoundedCornerShape(20.dp), onClick)
+    ) {
+        Text(
+            label, fontSize = 12.5.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = if (selected) cs.onPrimary else cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+        )
+    }
+}
+
 @Composable
 private fun LiveStatsEntry(enabled: Boolean, onToggle: (Boolean) -> Unit) {
     val cs = MaterialTheme.colorScheme
