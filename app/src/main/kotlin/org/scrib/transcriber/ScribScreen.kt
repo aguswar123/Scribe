@@ -162,6 +162,7 @@ fun ScribScreen(
         .filter { it.state == RowState.Installed || it.state == RowState.Active }
     var deleteTarget by remember { mutableStateOf<String?>(null) }
     var showBenchmarks by rememberSaveable { mutableStateOf(false) }
+    var showEta by rememberSaveable { mutableStateOf(false) }
     var openHistoryId by rememberSaveable { mutableStateOf<String?>(null) }
     var showChangelog by rememberSaveable { mutableStateOf(false) }
     var showWhatsNew by rememberSaveable { mutableStateOf(false) }
@@ -279,6 +280,7 @@ fun ScribScreen(
                             showBenchmarks = true
                         }
                     },
+                    onOpenEtaHistory = { showEta = true },
                     onOpenChangelog = { showChangelog = true },
                     onSelfTest = onSelfTest,
                     onBenchmarkFile = { benchmarkPicker.launch(arrayOf("audio/*", "video/*")) },
@@ -314,6 +316,9 @@ fun ScribScreen(
                 context.startActivity(Intent(context, BenchmarkHistoryActivity::class.java))
             }
         )
+    }
+    if (showEta) {
+        EtaHistoryDialog(benchmarkRuns, onDismiss = { showEta = false })
     }
     recording?.let { r ->
         RecordingDialog(r, remoteHost = state.remoteHost, onStop = onStopRecording, onCancel = onCancelRecording)
@@ -871,6 +876,7 @@ private fun SettingsTab(
     onKeyboardStats: (Boolean) -> Unit,
     onOpenDictionary: () -> Unit,
     onOpenBenchmarks: () -> Unit,
+    onOpenEtaHistory: () -> Unit,
     onOpenChangelog: () -> Unit,
     onSelfTest: () -> Unit,
     onBenchmarkFile: () -> Unit,
@@ -984,6 +990,7 @@ private fun SettingsTab(
         if (BuildConfig.LOCAL_MODELS) {
             item { BenchmarkEntry(state.benchmarkRuns, onOpenBenchmarks) }
         }
+        item { EtaHistoryEntry(onOpenEtaHistory) }
         item { ChangelogEntry(onOpenChangelog) }
     }
 }
@@ -1839,7 +1846,6 @@ private fun rtfText(metrics: TranscriptionMetrics): String =
 @Composable
 private fun RunProgress(t: TranscribeUi, showStats: Boolean) {
     val cs = MaterialTheme.colorScheme
-    val context = LocalContext.current
     Column(Modifier.fillMaxWidth()) {
         if (t.percent < 0) {
             LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -1850,15 +1856,17 @@ private fun RunProgress(t: TranscribeUi, showStats: Boolean) {
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(8.dp))
+            val fileLeft = t.fileEstimateMs ?: t.etaMs
             Text(
-                if (t.etaMs != null) {
-                    stringResource(R.string.transcribing_pct_eta, t.percent, remaining(context, t.etaMs))
+                if (fileLeft != null) {
+                    stringResource(R.string.transcribing_pct_eta, t.percent, "~" + preciseDuration(fileLeft))
                 } else {
                     stringResource(R.string.transcribing_pct, t.percent)
                 },
                 fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = cs.primary
             )
         }
+        EtaRows(t)
         if (showStats && t.metrics.hasData) {
             Spacer(Modifier.height(6.dp))
             StatsLine(t)
@@ -1868,6 +1876,39 @@ private fun RunProgress(t: TranscribeUi, showStats: Boolean) {
             stringResource(R.string.transcribe_background_hint),
             fontSize = 11.5.sp, color = cs.onSurfaceVariant, lineHeight = 16.sp
         )
+    }
+}
+
+// Time left for the file in hand and, with more files queued, for all of them. The second line says
+// where the numbers come from, since history is a guess and live speed is a measurement.
+@Composable
+private fun EtaRows(t: TranscribeUi) {
+    val cs = MaterialTheme.colorScheme
+    val calculating = stringResource(R.string.eta_calculating)
+    val fileText = t.fileEstimateMs?.let { stringResource(R.string.eta_left, preciseDuration(it)) } ?: calculating
+    val remainingFiles = t.batchTotal - t.batchIndex
+    Spacer(Modifier.height(8.dp))
+    EtaRow(stringResource(R.string.eta_this_file), fileText)
+    if (remainingFiles > 1) {
+        val totalText = t.totalEstimateMs?.let { stringResource(R.string.eta_left, preciseDuration(it)) } ?: calculating
+        EtaRow(stringResource(R.string.eta_all_remaining, remainingFiles), totalText)
+    }
+    if (t.fileEstimateMs != null) {
+        Spacer(Modifier.height(2.dp))
+        Text(
+            stringResource(if (t.estimateFromHistory) R.string.eta_source_history else R.string.eta_source_live),
+            fontSize = 11.sp, color = cs.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun EtaRow(label: String, value: String) {
+    val cs = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, fontSize = 12.5.sp, color = cs.onSurfaceVariant)
+        Spacer(Modifier.width(8.dp))
+        Text(value, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = cs.onSurface)
     }
 }
 
@@ -2074,6 +2115,90 @@ private fun BenchmarkEntry(runs: List<BenchmarkRun>, onClick: () -> Unit) {
             }
             Spacer(Modifier.width(16.dp))
             Text("›", fontSize = 22.sp, color = cs.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun EtaHistoryEntry(onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Surface(
+        color = cs.surfaceContainer,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clickableRow(RoundedCornerShape(16.dp), onClick)
+    ) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+                Text("≈", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = cs.primary)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.eta_history), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
+                Text(
+                    stringResource(R.string.eta_history_subtitle),
+                    fontSize = 12.sp, fontWeight = FontWeight.Medium, color = cs.onSurfaceVariant, lineHeight = 16.sp
+                )
+            }
+            Spacer(Modifier.width(16.dp))
+            Text("›", fontSize = 22.sp, color = cs.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun EtaHistoryDialog(runs: List<BenchmarkRun>, onDismiss: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val groups = remember(runs) { EtaEstimator.summaries(runs) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = cs.background,
+        tonalElevation = 0.dp,
+        title = { Text(stringResource(R.string.eta_history)) },
+        text = {
+            if (groups.isEmpty()) {
+                Text(stringResource(R.string.eta_history_empty), fontSize = 13.sp, color = cs.onSurfaceVariant)
+            } else {
+                Column(
+                    Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    groups.forEach { EtaModelCard(it) }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) } }
+    )
+}
+
+@Composable
+private fun EtaModelCard(stats: EtaModelStats) {
+    val cs = MaterialTheme.colorScheme
+    Surface(color = cs.surfaceContainer, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp)) {
+            Text(stats.modelName, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
+            Text(
+                stringResource(
+                    R.string.eta_history_stats,
+                    stats.runs.size,
+                    String.format(Locale.ROOT, "%.2f", stats.speed),
+                    preciseDuration((60_000 * stats.speed).toLong())
+                ),
+                fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = cs.primary,
+                modifier = Modifier.padding(top = 2.dp, bottom = 6.dp)
+            )
+            stats.runs.take(5).forEach { run ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                    Text(
+                        run.fileName, fontSize = 12.sp, color = cs.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        preciseDuration(run.metrics.audioDurationMs) + " → " + preciseDuration(run.metrics.inferenceMs),
+                        fontSize = 12.sp, color = cs.onSurfaceVariant
+                    )
+                }
+            }
         }
     }
 }

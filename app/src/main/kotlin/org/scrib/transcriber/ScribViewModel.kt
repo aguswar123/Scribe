@@ -83,7 +83,12 @@ data class TranscribeUi(
     val percent: Int = -1,
     val etaMs: Long? = null,
     val batchIndex: Int = 0,
-    val batchTotal: Int = 0
+    val batchTotal: Int = 0,
+    // Time left for this file and for it plus everything queued behind it. Live speed once it is
+    // measured, the history of the same model before that. Null while there is nothing to go on.
+    val fileEstimateMs: Long? = null,
+    val totalEstimateMs: Long? = null,
+    val estimateFromHistory: Boolean = false
 ) {
     // What the screen shows and what Copy, Share and Save hand over. Falls back to the plain text
     // while the run is still going and when nothing was recognised.

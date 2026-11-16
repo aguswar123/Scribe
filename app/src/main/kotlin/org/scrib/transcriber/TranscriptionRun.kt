@@ -56,10 +56,11 @@ object TranscriptionRun {
     fun startFiles(context: Context, items: List<Pair<Uri, String>>): Boolean {
         if (items.isEmpty()) return false
         val id: Long
+        val queued = items.drop(1).map { BatchItem(it.first, it.second) }
         synchronized(this) {
             if (token != null || BenchmarkBatchGate.isActive) return false
             batchQueue.clear()
-            items.drop(1).forEach { batchQueue.addLast(BatchItem(it.first, it.second)) }
+            queued.forEach { batchQueue.addLast(it) }
             batchPosition = 0
             batchTotal = items.size
             id = ++batchId
@@ -74,6 +75,13 @@ object TranscriptionRun {
             synchronized(this) {
                 batchQueue.clear()
                 batchTotal = 0
+            }
+        } else if (queued.isNotEmpty()) {
+            // Lengths of the files still waiting, read off the main thread: the all-files estimate
+            // needs them. A file whose length can't be read counts as zero rather than blocking it.
+            val app = context.applicationContext
+            scope.launch {
+                queued.forEach { it.durationMs = EtaEstimator.audioDurationMs(app, it.uri) ?: 0L }
             }
         }
         return started
@@ -188,6 +196,39 @@ object TranscriptionRun {
             } else {
                 null
             }
+            val historySpeed = EtaEstimator.speedFor(BenchmarkStore.load(app), modelName)
+            val knownDurationMs = EtaEstimator.audioDurationMs(app, uri) ?: 0L
+
+            // Live speed wins once the run has measured it; until then the history of the same model
+            // stands in. The queue behind the file is priced at the same speed.
+            fun publishEstimate(percent: Int, liveLeftMs: Long?) {
+                val duration = synchronized(metricsLock) { audioDurationMs }.takeIf { it > 0L } ?: knownDurationMs
+                val liveSpeed = if (liveLeftMs != null && duration > 0L && percent in 0..99) {
+                    liveLeftMs.toDouble() / (duration * (100 - percent) / 100.0)
+                } else {
+                    null
+                }
+                val speed = liveSpeed ?: historySpeed
+                val fileLeft = liveLeftMs ?: if (speed != null && duration > 0L) {
+                    (duration * speed * (100 - percent.coerceAtLeast(0)) / 100.0).toLong()
+                } else {
+                    null
+                }
+                val totalLeft = if (fileLeft != null && speed != null) {
+                    queuedAudioMs(batchId)?.let { fileLeft + (it * speed).toLong() }
+                } else {
+                    null
+                }
+                _state.update {
+                    it?.copy(
+                        fileEstimateMs = fileLeft,
+                        totalEstimateMs = totalLeft,
+                        estimateFromHistory = liveSpeed == null
+                    )
+                }
+            }
+            publishEstimate(-1, null)
+
             var result = TranscriptionRunResult.FAILED
             var nextMilestone = 25
             try {
@@ -201,6 +242,7 @@ object TranscriptionRun {
                     onProgress = { pct ->
                         val left = eta.mark(pct)
                         _state.update { it?.copy(percent = pct, etaMs = left) }
+                        publishEstimate(pct, left)
                         if (pct >= nextMilestone) {
                             nextMilestone += 25
                             StateLog.log("run $pct%: file=$name")
@@ -242,7 +284,8 @@ object TranscriptionRun {
                     _state.update {
                         it?.copy(
                             text = text.ifBlank { app.getString(R.string.transcribe_no_speech) },
-                            segments = segments, running = false, percent = 100, etaMs = null
+                            segments = segments, running = false, percent = 100, etaMs = null,
+                            fileEstimateMs = null, totalEstimateMs = null
                         )
                     }
                     StateLog.log("run done: file=$name text=${text.take(120)}")
@@ -288,7 +331,10 @@ object TranscriptionRun {
                         app.getString(R.string.transcribe_decode_stopped_unknown, elapsedOf(e.decodedMs))
                     }
                     _state.update {
-                        it?.copy(running = false, etaMs = null, error = message)
+                        it?.copy(
+                            running = false, etaMs = null, error = message,
+                            fileEstimateMs = null, totalEstimateMs = null
+                        )
                     }
                     publishMetrics()
                     StateLog.log("run failed: file=$name error=$message")
@@ -303,6 +349,7 @@ object TranscriptionRun {
                     _state.update {
                         it?.copy(
                             running = false, etaMs = null,
+                            fileEstimateMs = null, totalEstimateMs = null,
                             error = e.message ?: app.getString(R.string.transcribe_failed)
                         )
                     }
@@ -319,6 +366,16 @@ object TranscriptionRun {
             }
         }
         return true
+    }
+
+    // Audio still waiting behind the running file, or null while some of its lengths are unread.
+    private fun queuedAudioMs(id: Long): Long? = synchronized(this) {
+        if (id != batchId) return@synchronized 0L
+        var sum = 0L
+        for (item in batchQueue) {
+            sum += item.durationMs ?: return@synchronized null
+        }
+        sum
     }
 
     private fun chainBatch(context: Context, id: Long, last: TranscriptionRunResult) {
@@ -379,7 +436,10 @@ object TranscriptionRun {
 
 private const val METRICS_INTERVAL_MS = 500L
 
-private data class BatchItem(val uri: Uri, val name: String)
+private class BatchItem(val uri: Uri, val name: String) {
+    @Volatile
+    var durationMs: Long? = null
+}
 
 // Whisper reports how far through the audio it is, and it advances at a steady rate once the model
 // is warm — so the time the run has taken to cover the percent so far carries over to what is left.
