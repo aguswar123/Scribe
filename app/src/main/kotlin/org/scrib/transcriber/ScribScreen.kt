@@ -170,8 +170,13 @@ fun ScribScreen(
     var openHistoryId by rememberSaveable { mutableStateOf<String?>(null) }
     var showChangelog by rememberSaveable { mutableStateOf(false) }
     var showWhatsNew by rememberSaveable { mutableStateOf(false) }
+    var showNewUi by rememberSaveable { mutableStateOf(false) }
 
     val context = LocalContext.current
+    val newUi by NewUiSettings.flow(context).collectAsState()
+    val barItems = ScribTab.entries.map {
+        NewBarItem("scrib/tab/${it.name.lowercase()}", stringResource(it.labelRes), it.icon)
+    }
     var modelsExpanded by remember { mutableStateOf(SectionState.standardModels(context)) }
     var customExpanded by remember { mutableStateOf(SectionState.customModels(context)) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -232,7 +237,11 @@ fun ScribScreen(
 
     Column(Modifier.fillMaxSize().background(cs.background)) {
         Column(Modifier.weight(1f).statusBarsPadding()) {
-            AppBar(onAbout, showAbout = tab == ScribTab.Home || tab == ScribTab.Settings)
+            if (newUi.enabled) {
+                Spacer(Modifier.height(8.dp))
+            } else {
+                AppBar(onAbout, showAbout = tab == ScribTab.Home || tab == ScribTab.Settings)
+            }
             when (tab) {
                 ScribTab.Home -> HomeTab(
                     state,
@@ -293,6 +302,8 @@ fun ScribScreen(
                         }
                     },
                     onOpenEtaHistory = { showEta = true },
+                    onOpenNewUi = { showNewUi = true },
+                    onAbout = onAbout,
                     onOpenChangelog = { showChangelog = true },
                     onSelfTest = onSelfTest,
                     onBenchmarkFile = { benchmarkPicker.launch(arrayOf("audio/*", "video/*")) },
@@ -302,7 +313,20 @@ fun ScribScreen(
                 )
             }
         }
-        BottomBar(tab) { tab = it }
+        if (newUi.floating) {
+            NewBar(
+                config = newUi,
+                items = barItems,
+                selected = tab.ordinal,
+                onSelect = { tab = ScribTab.entries[it] },
+                modifier = Modifier.navigationBarsPadding().padding(top = 4.dp)
+            )
+        } else {
+            BottomBar(tab) { tab = it }
+        }
+    }
+    if (showNewUi) {
+        NewUiDialog(barItems, onDismiss = { showNewUi = false })
     }
 
     if (showAdd) {
@@ -889,6 +913,8 @@ private fun SettingsTab(
     onOpenDictionary: () -> Unit,
     onOpenBenchmarks: () -> Unit,
     onOpenEtaHistory: () -> Unit,
+    onOpenNewUi: () -> Unit,
+    onAbout: () -> Unit,
     onOpenChangelog: () -> Unit,
     onSelfTest: () -> Unit,
     onBenchmarkFile: () -> Unit,
@@ -1001,6 +1027,18 @@ private fun SettingsTab(
         item { DictionaryEntry(state.dictionaryEnabled, onOpenDictionary) }
         item { AlarmEntry() }
         item { KeepScreenEntry() }
+        item {
+            val context = LocalContext.current
+            val newUiConfig by NewUiSettings.flow(context).collectAsState()
+            NewUiEntry(
+                config = newUiConfig,
+                onToggle = { on -> NewUiSettings.update(context) { it.copy(enabled = on) } },
+                onOpen = onOpenNewUi
+            )
+            if (newUiConfig.enabled) {
+                AboutEntry(onAbout)
+            }
+        }
         if (BuildConfig.LOCAL_MODELS) {
             item { BenchmarkEntry(state.benchmarkRuns, onOpenBenchmarks) }
         }
@@ -1873,7 +1911,7 @@ private fun RunProgress(t: TranscribeUi, showStats: Boolean) {
             val fileLeft = t.fileEstimateMs ?: t.etaMs
             Text(
                 if (fileLeft != null) {
-                    stringResource(R.string.transcribing_pct_eta, t.percent, "~" + preciseDuration(fileLeft))
+                    stringResource(R.string.transcribing_pct_eta, t.percent, "~" + shortDuration(fileLeft))
                 } else {
                     stringResource(R.string.transcribing_pct, t.percent)
                 },
