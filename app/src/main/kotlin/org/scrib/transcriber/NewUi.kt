@@ -198,7 +198,7 @@ fun AboutEntry(onClick: () -> Unit) {
 }
 
 @Composable
-private fun BarChip(text: String, selected: Boolean, onClick: () -> Unit) {
+internal fun BarChip(text: String, selected: Boolean, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(50)
     Box(
@@ -212,7 +212,7 @@ private fun BarChip(text: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun SectionLabel(text: String) {
+internal fun SectionLabel(text: String) {
     Text(
         text.uppercase(), fontSize = 11.5.sp, fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -221,7 +221,7 @@ private fun SectionLabel(text: String) {
 }
 
 @Composable
-private fun SliderRow(label: String, value: Int, min: Int, max: Int, unit: String, onChange: (Int) -> Unit) {
+internal fun SliderRow(label: String, value: Int, min: Int, max: Int, unit: String, onChange: (Int) -> Unit) {
     val cs = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
         Row(Modifier.fillMaxWidth()) {
@@ -385,7 +385,7 @@ private fun LabelField(initial: String, hint: String, resetKey: Int, modifier: M
 }
 
 @Composable
-private fun IconPickerDialog(onPick: (String) -> Unit, onDismiss: () -> Unit) {
+internal fun IconPickerDialog(onPick: (String) -> Unit, onDismiss: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     var query by remember { mutableStateOf("") }
     val suggested = remember { LucideIcons.suggested }

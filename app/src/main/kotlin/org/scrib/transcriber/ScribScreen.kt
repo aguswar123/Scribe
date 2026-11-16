@@ -171,6 +171,7 @@ fun ScribScreen(
     var showChangelog by rememberSaveable { mutableStateOf(false) }
     var showWhatsNew by rememberSaveable { mutableStateOf(false) }
     var showNewUi by rememberSaveable { mutableStateOf(false) }
+    var showHomeUi by rememberSaveable { mutableStateOf(false) }
 
     val context = LocalContext.current
     val newUi by NewUiSettings.flow(context).collectAsState()
@@ -303,6 +304,7 @@ fun ScribScreen(
                     },
                     onOpenEtaHistory = { showEta = true },
                     onOpenNewUi = { showNewUi = true },
+                    onOpenHomeUi = { showHomeUi = true },
                     onAbout = onAbout,
                     onOpenChangelog = { showChangelog = true },
                     onSelfTest = onSelfTest,
@@ -327,6 +329,9 @@ fun ScribScreen(
     }
     if (showNewUi) {
         NewUiDialog(barItems, onDismiss = { showNewUi = false })
+    }
+    if (showHomeUi) {
+        HomeUiDialog(onDismiss = { showHomeUi = false })
     }
 
     if (showAdd) {
@@ -409,6 +414,19 @@ private fun HomeTab(
     onPickFile: () -> Unit,
     onSwitchModel: (() -> Unit)?
 ) {
+    val homeUi by HomeUiSettings.flow(LocalContext.current).collectAsState()
+    if (homeUi.enabled && !state.firstRun) {
+        HomeTabNew(
+            config = homeUi,
+            state = state,
+            actions = actions,
+            onOpenSettings = { onOpenTab(ScribTab.Settings) },
+            onRecord = onRecord,
+            onPickFile = onPickFile,
+            onSwitchModel = onSwitchModel
+        )
+        return
+    }
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp)
@@ -914,6 +932,7 @@ private fun SettingsTab(
     onOpenBenchmarks: () -> Unit,
     onOpenEtaHistory: () -> Unit,
     onOpenNewUi: () -> Unit,
+    onOpenHomeUi: () -> Unit,
     onAbout: () -> Unit,
     onOpenChangelog: () -> Unit,
     onSelfTest: () -> Unit,
@@ -1038,6 +1057,15 @@ private fun SettingsTab(
             if (newUiConfig.enabled) {
                 AboutEntry(onAbout)
             }
+        }
+        item {
+            val context = LocalContext.current
+            val homeUiConfig by HomeUiSettings.flow(context).collectAsState()
+            HomeUiEntry(
+                config = homeUiConfig,
+                onToggle = { on -> HomeUiSettings.update(context) { it.copy(enabled = on) } },
+                onOpen = onOpenHomeUi
+            )
         }
         if (BuildConfig.LOCAL_MODELS) {
             item { BenchmarkEntry(state.benchmarkRuns, onOpenBenchmarks) }
