@@ -1,0 +1,87 @@
+diff --git a/app/src/main/kotlin/org/scrib/transcriber/TranscriptionRun.kt b/app/src/main/kotlin/org/scrib/transcriber/TranscriptionRun.kt
+index 010b444..9a48a09 100644
+--- a/app/src/main/kotlin/org/scrib/transcriber/TranscriptionRun.kt
++++ b/app/src/main/kotlin/org/scrib/transcriber/TranscriptionRun.kt
+@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.update
+ import kotlinx.coroutines.isActive
+ import kotlinx.coroutines.cancelAndJoin
+ import kotlinx.coroutines.launch
++import java.util.concurrent.atomic.AtomicBoolean
+ 
+ enum class TranscriptionRunResult {
+     SUCCESS,
+@@ -220,15 +221,43 @@ object TranscriptionRun {
+                     null
+                 }
+                 _state.update {
+-                    it?.copy(
+-                        fileEstimateMs = fileLeft,
+-                        totalEstimateMs = totalLeft,
+-                        estimateFromHistory = liveSpeed == null
+-                    )
++                    if (it != null && it.running) {
++                        it.copy(
++                            fileEstimateMs = fileLeft,
++                            totalEstimateMs = totalLeft,
++                            estimateFromHistory = liveSpeed == null
++                        )
++                    } else {
++                        it
++                    }
+                 }
+             }
+             publishEstimate(-1, null)
+ 
++            // Whisper and the other long-form models run the whole file in one native call, so the
++            // engine reports 0% and then 100% and nothing in between. When the history of the same
++            // model says how long such a run takes, the percent follows the clock instead of sitting
++            // still; the moment the engine reports a real figure in between, that one takes over.
++            val realProgress = AtomicBoolean(false)
++            val progressJob = if (historySpeed != null) launch {
++                while (isActive) {
++                    delay(PROGRESS_INTERVAL_MS)
++                    if (realProgress.get()) break
++                    val (duration, inferenceStart) = synchronized(metricsLock) { audioDurationMs to inferenceStartedAt }
++                    if (duration <= 0L || inferenceStart == 0L) continue
++                    val expectedMs = duration * historySpeed
++                    if (expectedMs <= 0.0) continue
++                    val elapsedMs = SystemClock.elapsedRealtime() - inferenceStart
++                    val pct = (elapsedMs * 100.0 / expectedMs).toInt().coerceIn(0, 99)
++                    _state.update {
++                        if (it != null && it.running) it.copy(percent = maxOf(it.percent, pct)) else it
++                    }
++                    publishEstimate(pct, null)
++                }
++            } else {
++                null
++            }
++
+             var result = TranscriptionRunResult.FAILED
+             var nextMilestone = 25
+             try {
+@@ -241,7 +270,8 @@ object TranscriptionRun {
+                     // once per progress tick doubles that cost for nothing a person can see.
+                     onProgress = { pct ->
+                         val left = eta.mark(pct)
+-                        _state.update { it?.copy(percent = pct, etaMs = left) }
++                        if (pct in 1..99) realProgress.set(true)
++                        _state.update { it?.copy(percent = maxOf(it.percent, pct), etaMs = left) }
+                         publishEstimate(pct, left)
+                         if (pct >= nextMilestone) {
+                             nextMilestone += 25
+@@ -358,6 +388,7 @@ object TranscriptionRun {
+                 }
+             } finally {
+                 metricsJob?.cancelAndJoin()
++                progressJob?.cancelAndJoin()
+                 synchronized(this@TranscriptionRun) {
+                     if (token === cancellation) token = null
+                 }
+@@ -435,6 +466,7 @@ object TranscriptionRun {
+ }
+ 
+ private const val METRICS_INTERVAL_MS = 500L
++private const val PROGRESS_INTERVAL_MS = 1000L
+ 
+ private class BatchItem(val uri: Uri, val name: String) {
+     @Volatile
