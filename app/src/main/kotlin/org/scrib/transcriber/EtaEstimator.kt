@@ -27,6 +27,14 @@ object EtaEstimator {
         return speedOf(runs.filter { it.modelName == modelName && usable(it) }.take(RECENT_RUNS))
     }
 
+    // Decoding depends on the file, not the model, so every recent run counts.
+    fun decodeSpeedFor(runs: List<BenchmarkRun>): Double? {
+        val used = runs.filter { it.metrics.audioDurationMs > 0L && it.metrics.decodeMs > 0L }.take(RECENT_RUNS)
+        val audio = used.sumOf { it.metrics.audioDurationMs }
+        if (audio <= 0L) return null
+        return used.sumOf { it.metrics.decodeMs }.toDouble() / audio
+    }
+
     fun summaries(runs: List<BenchmarkRun>): List<EtaModelStats> =
         runs.filter { usable(it) }
             .groupBy { it.modelName ?: "—" }
@@ -60,5 +68,18 @@ fun preciseDuration(ms: Long): String {
         h > 0 -> "$h h $m min $s sec"
         m > 0 -> "$m min $s sec"
         else -> "$s sec"
+    }
+}
+
+// "40s", "3m 50s", "1h 05m 10s". Rounded to the nearest second, never zero.
+fun shortDuration(ms: Long): String {
+    val total = ((ms + 500) / 1000).coerceAtLeast(1)
+    val h = total / 3600
+    val m = total % 3600 / 60
+    val s = total % 60
+    return when {
+        h > 0 -> "${h}h ${m.toString().padStart(2, '0')}m ${s.toString().padStart(2, '0')}s"
+        m > 0 -> "${m}m ${s.toString().padStart(2, '0')}s"
+        else -> "${s}s"
     }
 }

@@ -1916,22 +1916,24 @@ private fun KeepScreenRow() {
 // where the numbers come from, since history is a guess and live speed is a measurement.
 @Composable
 private fun EtaRows(t: TranscribeUi) {
-    val cs = MaterialTheme.colorScheme
     val calculating = stringResource(R.string.eta_calculating)
-    val fileText = t.fileEstimateMs?.let { stringResource(R.string.eta_left, preciseDuration(it)) } ?: calculating
     val remainingFiles = t.batchTotal - t.batchIndex
+    // The file's own total is decode (while it lasts) plus inference.
+    val thisFileMs = if (t.decoding) {
+        t.decodeLeftMs?.let { d -> t.fileEstimateMs?.let { d + it } }
+    } else {
+        t.fileEstimateMs
+    }
+    val fileText = when {
+        t.decoding -> t.decodeLeftMs?.let { stringResource(R.string.eta_decode_left, shortDuration(it)) }
+        else -> t.fileEstimateMs?.let { stringResource(R.string.eta_inference_left, shortDuration(it)) }
+    } ?: calculating
     Spacer(Modifier.height(8.dp))
+    EtaRow(stringResource(R.string.eta_total), thisFileMs?.let { shortDuration(it) } ?: calculating)
     EtaRow(stringResource(R.string.eta_this_file), fileText)
     if (remainingFiles > 1) {
-        val totalText = t.totalEstimateMs?.let { stringResource(R.string.eta_left, preciseDuration(it)) } ?: calculating
+        val totalText = t.totalEstimateMs?.let { shortDuration(it) } ?: calculating
         EtaRow(stringResource(R.string.eta_all_remaining, remainingFiles), totalText)
-    }
-    if (t.fileEstimateMs != null) {
-        Spacer(Modifier.height(2.dp))
-        Text(
-            stringResource(if (t.estimateFromHistory) R.string.eta_source_history else R.string.eta_source_live),
-            fontSize = 11.sp, color = cs.onSurfaceVariant
-        )
     }
 }
 

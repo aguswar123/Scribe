@@ -95,6 +95,9 @@
     <string name="keep_screen_sub" translatable="false">Keeps the screen on while transcribing. It turns off normally when finished.</string>
     <string name="eta_this_file" translatable="false">This file</string>
     <string name="eta_all_remaining" translatable="false">All %1$d remaining files</string>
+    <string name="eta_total" translatable="false">Total remaining time</string>
+    <string name="eta_decode_left" translatable="false">Decode remaining ~%1$s</string>
+    <string name="eta_inference_left" translatable="false">Inference remaining %1$s</string>
     <string name="eta_calculating" translatable="false">calculating…</string>
     <string name="eta_left" translatable="false">~%1$s left</string>
     <string name="eta_source_live" translatable="false">Based on this run\'s current speed</string>

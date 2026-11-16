@@ -88,7 +88,10 @@ data class TranscribeUi(
     // measured, the history of the same model before that. Null while there is nothing to go on.
     val fileEstimateMs: Long? = null,
     val totalEstimateMs: Long? = null,
-    val estimateFromHistory: Boolean = false
+    val estimateFromHistory: Boolean = false,
+    // True until the file is decoded; decodeLeftMs is the decode time still to go, null if unknown.
+    val decoding: Boolean = false,
+    val decodeLeftMs: Long? = null
 ) {
     // What the screen shows and what Copy, Share and Save hand over. Falls back to the plain text
     // while the run is still going and when nothing was recognised.

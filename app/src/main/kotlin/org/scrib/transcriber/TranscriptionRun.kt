@@ -197,13 +197,16 @@ object TranscriptionRun {
             } else {
                 null
             }
-            val historySpeed = EtaEstimator.speedFor(BenchmarkStore.load(app), modelName)
+            val benchmarkHistory = BenchmarkStore.load(app)
+            val historySpeed = EtaEstimator.speedFor(benchmarkHistory, modelName)
+            val historyDecodeSpeed = EtaEstimator.decodeSpeedFor(benchmarkHistory)
             val knownDurationMs = EtaEstimator.audioDurationMs(app, uri) ?: 0L
 
             // Live speed wins once the run has measured it; until then the history of the same model
             // stands in. The queue behind the file is priced at the same speed.
             fun publishEstimate(percent: Int, liveLeftMs: Long?) {
-                val duration = synchronized(metricsLock) { audioDurationMs }.takeIf { it > 0L } ?: knownDurationMs
+                val (measuredDurationMs, measuredDecodeMs) = synchronized(metricsLock) { audioDurationMs to decodeMs }
+                val duration = measuredDurationMs.takeIf { it > 0L } ?: knownDurationMs
                 val liveSpeed = if (liveLeftMs != null && duration > 0L && percent in 0..99) {
                     liveLeftMs.toDouble() / (duration * (100 - percent) / 100.0)
                 } else {
@@ -215,8 +218,24 @@ object TranscriptionRun {
                 } else {
                     null
                 }
+                // The audio is decoded once the engine has reported its length. Until then the decode
+                // time left is the expected decode time minus what has already passed.
+                val decoding = measuredDurationMs == 0L
+                val decodeSpeed = if (measuredDurationMs > 0L && measuredDecodeMs > 0L) {
+                    measuredDecodeMs.toDouble() / measuredDurationMs
+                } else {
+                    historyDecodeSpeed
+                }
+                val decodeLeft = if (decoding && decodeSpeed != null && duration > 0L) {
+                    (duration * decodeSpeed - (SystemClock.elapsedRealtime() - startedAt)).toLong().coerceAtLeast(0L)
+                } else {
+                    null
+                }
+                // This file (decode + inference) plus every queued file at decode + inference speed.
                 val totalLeft = if (fileLeft != null && speed != null) {
-                    queuedAudioMs(batchId)?.let { fileLeft + (it * speed).toLong() }
+                    val thisFileLeft = if (decoding) decodeLeft?.let { it + fileLeft } else fileLeft
+                    val queuedPerMs = speed + (decodeSpeed ?: 0.0)
+                    queuedAudioMs(batchId)?.let { queued -> thisFileLeft?.let { it + (queued * queuedPerMs).toLong() } }
                 } else {
                     null
                 }
@@ -225,7 +244,9 @@ object TranscriptionRun {
                         it.copy(
                             fileEstimateMs = fileLeft,
                             totalEstimateMs = totalLeft,
-                            estimateFromHistory = liveSpeed == null
+                            estimateFromHistory = liveSpeed == null,
+                            decoding = decoding,
+                            decodeLeftMs = decodeLeft
                         )
                     } else {
                         it
@@ -233,6 +254,14 @@ object TranscriptionRun {
                 }
             }
             publishEstimate(-1, null)
+
+            // Decoding reports nothing while it runs, so its countdown is refreshed on a clock.
+            val decodeJob = launch {
+                while (isActive && synchronized(metricsLock) { audioDurationMs } == 0L) {
+                    delay(500L)
+                    publishEstimate(-1, null)
+                }
+            }
 
             // Whisper and the other long-form models run the whole file in one native call, so the
             // engine reports 0% and then 100% and nothing in between. When the history of the same
@@ -315,7 +344,8 @@ object TranscriptionRun {
                         it?.copy(
                             text = text.ifBlank { app.getString(R.string.transcribe_no_speech) },
                             segments = segments, running = false, percent = 100, etaMs = null,
-                            fileEstimateMs = null, totalEstimateMs = null
+                            fileEstimateMs = null, totalEstimateMs = null,
+                            decoding = false, decodeLeftMs = null
                         )
                     }
                     StateLog.log("run done: file=$name text=${text.take(120)}")
@@ -389,6 +419,7 @@ object TranscriptionRun {
             } finally {
                 metricsJob?.cancelAndJoin()
                 progressJob?.cancelAndJoin()
+                decodeJob.cancelAndJoin()
                 synchronized(this@TranscriptionRun) {
                     if (token === cancellation) token = null
                 }
