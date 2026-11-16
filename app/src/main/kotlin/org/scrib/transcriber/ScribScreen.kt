@@ -172,9 +172,11 @@ fun ScribScreen(
     var showWhatsNew by rememberSaveable { mutableStateOf(false) }
     var showNewUi by rememberSaveable { mutableStateOf(false) }
     var showHomeUi by rememberSaveable { mutableStateOf(false) }
+    var showRecordUi by rememberSaveable { mutableStateOf(false) }
 
     val context = LocalContext.current
     val newUi by NewUiSettings.flow(context).collectAsState()
+    val recordUi by RecordUiSettings.flow(context).collectAsState()
     val barItems = ScribTab.entries.map {
         NewBarItem("scrib/tab/${it.name.lowercase()}", stringResource(it.labelRes), it.icon)
     }
@@ -305,6 +307,7 @@ fun ScribScreen(
                     onOpenEtaHistory = { showEta = true },
                     onOpenNewUi = { showNewUi = true },
                     onOpenHomeUi = { showHomeUi = true },
+                    onOpenRecordUi = { showRecordUi = true },
                     onAbout = onAbout,
                     onOpenChangelog = { showChangelog = true },
                     onSelfTest = onSelfTest,
@@ -332,6 +335,9 @@ fun ScribScreen(
     }
     if (showHomeUi) {
         HomeUiDialog(onDismiss = { showHomeUi = false })
+    }
+    if (showRecordUi) {
+        RecordUiDialog(onDismiss = { showRecordUi = false })
     }
 
     if (showAdd) {
@@ -362,7 +368,11 @@ fun ScribScreen(
         EtaHistoryDialog(benchmarkRuns, onDismiss = { showEta = false })
     }
     recording?.let { r ->
-        RecordingDialog(r, remoteHost = state.remoteHost, onStop = onStopRecording, onCancel = onCancelRecording)
+        if (recordUi.enabled) {
+            RecordingScreenNew(recordUi, r, state.remoteHost, onStop = onStopRecording, onCancel = onCancelRecording)
+        } else {
+            RecordingDialog(r, remoteHost = state.remoteHost, onStop = onStopRecording, onCancel = onCancelRecording)
+        }
     }
     if (transcription != null && !state.benchmarkBatch.running) {
         transcription?.let { t ->
@@ -527,6 +537,19 @@ private fun RecordTab(
 ) {
     if (state.firstRun) {
         SingleCardColumn { NudgeCard(state, actions, onOpenSettings = { onOpenTab(ScribTab.Settings) }) }
+        return
+    }
+    val recordUi by RecordUiSettings.flow(LocalContext.current).collectAsState()
+    if (recordUi.enabled) {
+        RecordTabNew(
+            config = recordUi,
+            remoteHost = state.remoteHost,
+            history = state.history,
+            onRecord = onRecord,
+            onOpenEntry = onOpenEntry,
+            onDeleteEntry = onDeleteEntry,
+            onClearHistory = onClearHistory
+        )
         return
     }
     val cs = MaterialTheme.colorScheme
@@ -933,6 +956,7 @@ private fun SettingsTab(
     onOpenEtaHistory: () -> Unit,
     onOpenNewUi: () -> Unit,
     onOpenHomeUi: () -> Unit,
+    onOpenRecordUi: () -> Unit,
     onAbout: () -> Unit,
     onOpenChangelog: () -> Unit,
     onSelfTest: () -> Unit,
@@ -1065,6 +1089,15 @@ private fun SettingsTab(
                 config = homeUiConfig,
                 onToggle = { on -> HomeUiSettings.update(context) { it.copy(enabled = on) } },
                 onOpen = onOpenHomeUi
+            )
+        }
+        item {
+            val context = LocalContext.current
+            val recordUiConfig by RecordUiSettings.flow(context).collectAsState()
+            RecordUiEntry(
+                config = recordUiConfig,
+                onToggle = { on -> RecordUiSettings.update(context) { it.copy(enabled = on) } },
+                onOpen = onOpenRecordUi
             )
         }
         if (BuildConfig.LOCAL_MODELS) {

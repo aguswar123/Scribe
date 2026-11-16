@@ -55,7 +55,7 @@ import androidx.compose.ui.window.DialogProperties
 
 // A Lucide icon, or a plain character when this build of the library does not have it.
 @Composable
-private fun GlyphIcon(name: String, glyph: String, tint: Color, size: Dp) {
+internal fun GlyphIcon(name: String, glyph: String, tint: Color, size: Dp) {
     val vector = remember(name) { LucideIcons.resolve(name) }
     if (vector != null) {
         Icon(vector, null, tint = tint, modifier = Modifier.size(size))
@@ -351,7 +351,7 @@ fun HomeUiEntry(config: HomeUiConfig, onToggle: (Boolean) -> Unit, onOpen: () ->
 }
 
 @Composable
-private fun SwitchRow(title: String, subtitle: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
+internal fun SwitchRow(title: String, subtitle: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
     val cs = MaterialTheme.colorScheme
     Surface(
         color = cs.surfaceContainer, shape = RoundedCornerShape(16.dp),
@@ -370,7 +370,7 @@ private fun SwitchRow(title: String, subtitle: String?, checked: Boolean, onChan
 }
 
 @Composable
-private fun IconRow(title: String, icon: String, glyph: String, onClick: () -> Unit) {
+internal fun IconRow(title: String, icon: String, glyph: String, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(

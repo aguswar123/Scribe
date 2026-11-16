@@ -97,6 +97,9 @@
     <string name="eta_all_remaining" translatable="false">All %1$d remaining files</string>
     <string name="home_record_sub" translatable="false">Speak, then get the text</string>
     <string name="home_file_sub" translatable="false">From your device</string>
+    <string name="record_hint_short" translatable="false">Transcribed on this phone, then discarded</string>
+    <string name="record_delete_title" translatable="false">Delete this recording?</string>
+    <string name="record_delete_message" translatable="false">This cannot be undone.</string>
     <string name="eta_total" translatable="false">Total remaining time</string>
     <string name="eta_decode_left" translatable="false">Decode remaining ~%1$s</string>
     <string name="eta_inference_left" translatable="false">Inference remaining %1$s</string>
