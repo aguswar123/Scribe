@@ -19,6 +19,7 @@
     <string name="nav_home">Início</string>
     <string name="nav_record">Gravar</string>
     <string name="nav_transcribe">Transcrever</string>
+    <string name="nav_audiobook">Audiolivro</string>
     <string name="nav_keyboard">Teclado</string>
     <string name="nav_settings">Configurações</string>
     <string name="file_entry_sub">Escolha um arquivo de áudio ou vídeo e transcreva-o</string>

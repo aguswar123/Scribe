@@ -75,7 +75,8 @@ fun NewBar(
     items: List<NewBarItem>,
     selected: Int,
     onSelect: (Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    hidden: Set<Int> = emptySet()
 ) {
     val cs = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(config.cornerDp.dp)
@@ -97,6 +98,7 @@ fun NewBar(
     ) {
         items.forEachIndexed { index, item ->
             if (index == NewUiConfig.TRANSCRIBE_INDEX && !config.showTranscribeTab) return@forEachIndexed
+            if (index in hidden) return@forEachIndexed
             NewBarTab(config, item, index, index == selected) { onSelect(index) }
         }
     }

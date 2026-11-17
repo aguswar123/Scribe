@@ -19,6 +19,7 @@
     <string name="nav_home">Ana Sayfa</string>
     <string name="nav_record">Kayıt</string>
     <string name="nav_transcribe">Yazıya dök</string>
+    <string name="nav_audiobook">Sesli kitap</string>
     <string name="nav_keyboard">Klavye</string>
     <string name="nav_settings">Ayarlar</string>
     <string name="file_entry_sub">Bir ses veya video dosyası seçip yazıya dökün</string>

@@ -19,6 +19,7 @@
     <string name="nav_home">Start</string>
     <string name="nav_record">Opnemen</string>
     <string name="nav_transcribe">Bestand</string>
+    <string name="nav_audiobook">Luisterboek</string>
     <string name="nav_keyboard">Toetsenbord</string>
     <string name="nav_settings">Instellingen</string>
     <string name="file_entry_sub">Kies een audio- of videobestand en transcribeer het</string>

@@ -19,6 +19,7 @@
     <string name="nav_home">Start</string>
     <string name="nav_record">Nagraj</string>
     <string name="nav_transcribe">Transkrybuj</string>
+    <string name="nav_audiobook">Audiobook</string>
     <string name="nav_keyboard">Klawiatura</string>
     <string name="nav_settings">Ustawienia</string>
     <string name="file_entry_sub">Wybierz plik audio lub wideo i transkrybuj go</string>

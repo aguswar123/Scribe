@@ -91,7 +91,9 @@ data class TranscribeUi(
     val estimateFromHistory: Boolean = false,
     // True until the file is decoded; decodeLeftMs is the decode time still to go, null if unknown.
     val decoding: Boolean = false,
-    val decodeLeftMs: Long? = null
+    val decodeLeftMs: Long? = null,
+    // Formats saved on their own when the run ends (audiobook chapters); empty for every other run.
+    val autoSave: List<String> = emptyList()
 ) {
     // What the screen shows and what Copy, Share and Save hand over. Falls back to the plain text
     // while the run is still going and when nothing was recognised.

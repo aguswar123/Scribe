@@ -19,6 +19,7 @@
     <string name="nav_home">Start</string>
     <string name="nav_record">Aufnahme</string>
     <string name="nav_transcribe">Datei</string>
+    <string name="nav_audiobook">Hörbuch</string>
     <string name="nav_keyboard">Tastatur</string>
     <string name="nav_settings">Einstellungen</string>
     <string name="file_entry_sub">Eine Audio- oder Videodatei auswählen und transkribieren</string>

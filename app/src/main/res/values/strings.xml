@@ -23,6 +23,7 @@
     <string name="nav_home">Home</string>
     <string name="nav_record">Record</string>
     <string name="nav_transcribe">Transcribe</string>
+    <string name="nav_audiobook">Audiobook</string>
     <string name="nav_keyboard">Keyboard</string>
     <string name="nav_settings">Settings</string>
     <string name="file_entry_sub">Pick an audio or video file and transcribe it</string>

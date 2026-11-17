@@ -135,7 +135,8 @@ object TranscriptionRun {
             sourceUri = source,
             modelName = modelName,
             batchIndex = batchIndex,
-            batchTotal = batchTotal
+            batchTotal = batchTotal,
+            autoSave = AudiobookRuns.formatsFor(uri)
         )
         StateLog.log("run started: file=$name model=$modelName${if (ephemeral) " (ephemeral)" else ""}")
         TranscriptionForegroundService.start(app)
@@ -376,6 +377,8 @@ object TranscriptionRun {
                             _historyUpdates.value += 1
                         }
                     }
+                    // Audiobook chapters save their subtitles next to the chapter file on their own.
+                    if (persistTranscript && segments.isNotEmpty()) AudiobookRuns.onFinished(app, uri, segments)
                     result = TranscriptionRunResult.SUCCESS
                 }
             } catch (e: DecodeStoppedException) {

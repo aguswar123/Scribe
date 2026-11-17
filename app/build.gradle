@@ -124,6 +124,8 @@ android {
     // server cores and run at about half the speed on a phone.
     packaging {
         jniLibs {
+            // FFmpegKit's libraries are loaded from the extracted copy.
+            useLegacyPackaging = true
             excludes += ['**/libggml-cpu-android_armv8.2_1.so',
                          '**/libggml-cpu-android_armv9*.so']
         }
@@ -165,6 +167,9 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
     implementation 'com.composables:icons-lucide:1.1.0'
+    implementation 'androidx.documentfile:documentfile:1.0.1'
+    // Splits audiobooks into chapters (the same FFmpegKit build STools uses).
+    implementation 'io.github.maitrungduc1410:ffmpeg-kit-min:6.0.1'
     testImplementation 'junit:junit:4.13.2'
     if (max) {
         if (!file('libs/sherpa-onnx.aar').exists()) {

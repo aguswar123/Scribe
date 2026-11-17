@@ -19,6 +19,7 @@
     <string name="nav_home">Головна</string>
     <string name="nav_record">Запис</string>
     <string name="nav_transcribe">Розпізнати</string>
+    <string name="nav_audiobook">Аудіокнига</string>
     <string name="nav_keyboard">Клавіатура</string>
     <string name="nav_settings">Налаштування</string>
     <string name="file_entry_sub">Виберіть аудіо- або відеофайл і розпізнайте його</string>

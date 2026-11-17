@@ -36,13 +36,16 @@ data class NewUiConfig(
     fun iconFor(index: Int): String = icons.getOrNull(index)?.takeIf { it.isNotBlank() } ?: DEFAULT_ICONS[index]
 
     companion object {
-        const val TAB_COUNT = 5
+        const val TAB_COUNT = 6
+
+        // Position of the Audiobook tab. Labels and icons saved before it existed sit one slot lower.
+        const val AUDIOBOOK_INDEX = 3
 
         // Position of the Transcribe tab, the one that can be taken out of the bar.
         const val TRANSCRIBE_INDEX = 2
 
-        // Lucide names, in the order of the tabs: Home, Record, Transcribe, Keyboard, Settings.
-        val DEFAULT_ICONS = listOf("house", "mic", "audio-lines", "keyboard", "settings")
+        // Lucide names, in the order of the tabs: Home, Record, Transcribe, Audiobook, Keyboard, Settings.
+        val DEFAULT_ICONS = listOf("house", "mic", "audio-lines", "book-open", "keyboard", "settings")
     }
 }
 
@@ -81,6 +84,7 @@ object NewUiSettings {
             .putString("outlineColor", next.outlineColor.name)
             .putInt("iconSize", next.iconSizeDp)
             .putInt("textSize", next.textSizeSp)
+            .putBoolean("audiobookSlot", true)
         for (i in 0 until NewUiConfig.TAB_COUNT) {
             edit.putString("label$i", next.labels[i])
             edit.putString("icon$i", next.icons[i])
@@ -109,6 +113,7 @@ object NewUiSettings {
         }
         val p = prefs(context)
         val d = NewUiConfig()
+        val migrated = p.getBoolean("audiobookSlot", false)
         _config.value = clamp(
             NewUiConfig(
                 enabled = p.getBoolean("enabled", d.enabled),
@@ -126,11 +131,20 @@ object NewUiSettings {
                     .getOrDefault(d.outlineColor),
                 iconSizeDp = p.getInt("iconSize", d.iconSizeDp),
                 textSizeSp = p.getInt("textSize", d.textSizeSp),
-                labels = List(NewUiConfig.TAB_COUNT) { p.getString("label$it", null) ?: "" },
-                icons = List(NewUiConfig.TAB_COUNT) { p.getString("icon$it", null) ?: NewUiConfig.DEFAULT_ICONS[it] }
+                labels = List(NewUiConfig.TAB_COUNT) { i -> savedSlot(i, migrated)?.let { p.getString("label$it", null) } ?: "" },
+                icons = List(NewUiConfig.TAB_COUNT) { i ->
+                    savedSlot(i, migrated)?.let { p.getString("icon$it", null) } ?: NewUiConfig.DEFAULT_ICONS[i]
+                }
             )
         )
         loaded = true
+    }
+
+    // Where tab i's label and icon were saved. Before the Audiobook tab there were five slots.
+    private fun savedSlot(i: Int, migrated: Boolean): Int? = when {
+        migrated || i < NewUiConfig.AUDIOBOOK_INDEX -> i
+        i == NewUiConfig.AUDIOBOOK_INDEX -> null
+        else -> i - 1
     }
 
     private fun prefs(context: Context) =

@@ -113,6 +113,7 @@ private enum class ScribTab(val labelRes: Int, val icon: Int) {
     Home(R.string.nav_home, R.drawable.ic_tab_home),
     Record(R.string.nav_record, R.drawable.ic_tab_mic),
     File(R.string.nav_transcribe, R.drawable.ic_tab_graphic_eq),
+    Audiobook(R.string.nav_audiobook, R.drawable.ic_tab_audiobook),
     Keyboard(R.string.nav_keyboard, R.drawable.ic_tab_keyboard),
     Settings(R.string.nav_settings, R.drawable.ic_tab_settings)
 }
@@ -176,6 +177,7 @@ fun ScribScreen(
 
     val context = LocalContext.current
     val newUi by NewUiSettings.flow(context).collectAsState()
+    val audiobookOn by AudiobookStore.tabEnabled(context).collectAsState()
     val recordUi by RecordUiSettings.flow(context).collectAsState()
     val barItems = ScribTab.entries.map {
         NewBarItem("scrib/tab/${it.name.lowercase()}", stringResource(it.labelRes), it.icon)
@@ -236,6 +238,10 @@ fun ScribScreen(
         }
     }
 
+    LaunchedEffect(audiobookOn) {
+        if (!audiobookOn && tab == ScribTab.Audiobook) tab = ScribTab.Home
+    }
+
     BackHandler(tab != ScribTab.Home) { tab = ScribTab.Home }
 
     Column(Modifier.fillMaxSize().background(cs.background)) {
@@ -268,6 +274,7 @@ fun ScribScreen(
                     onClearHistory = onClearHistory
                 )
                 ScribTab.File -> FileTab(state, actions, onOpenTab = { tab = it }) { audioPicker.launch(arrayOf("audio/*", "video/*")) }
+                ScribTab.Audiobook -> AudiobookTab()
                 ScribTab.Keyboard -> KeyboardTab(state.keyboardLayouts, onConfigureKeyboardLayouts)
                 ScribTab.Settings -> SettingsTab(
                     state = state,
@@ -324,10 +331,11 @@ fun ScribScreen(
                 items = barItems,
                 selected = tab.ordinal,
                 onSelect = { tab = ScribTab.entries[it] },
+                hidden = if (audiobookOn) emptySet() else setOf(ScribTab.Audiobook.ordinal),
                 modifier = Modifier.navigationBarsPadding().padding(top = 4.dp)
             )
         } else {
-            BottomBar(tab) { tab = it }
+            BottomBar(tab, audiobookOn) { tab = it }
         }
     }
     if (showNewUi) {
@@ -1070,6 +1078,7 @@ private fun SettingsTab(
         item { DictionaryEntry(state.dictionaryEnabled, onOpenDictionary) }
         item { AlarmEntry() }
         item { KeepScreenEntry() }
+        item { AudiobookEntry() }
         item {
             val context = LocalContext.current
             val newUiConfig by NewUiSettings.flow(context).collectAsState()
@@ -1151,13 +1160,14 @@ private fun ServiceCard(
 }
 
 @Composable
-private fun BottomBar(selected: ScribTab, onSelect: (ScribTab) -> Unit) {
+private fun BottomBar(selected: ScribTab, audiobookOn: Boolean, onSelect: (ScribTab) -> Unit) {
     val cs = MaterialTheme.colorScheme
     Column {
         Box(Modifier.fillMaxWidth().height(1.dp).background(cs.outlineVariant))
         Surface(color = cs.surfaceContainer) {
             Row(Modifier.fillMaxWidth().navigationBarsPadding().height(64.dp)) {
                 ScribTab.entries.forEach { t ->
+                    if (t == ScribTab.Audiobook && !audiobookOn) return@forEach
                     val on = t == selected
                     val columnInteraction = remember { MutableInteractionSource() }
                     Column(
@@ -1774,9 +1784,16 @@ private fun TranscriptionDialog(
                     Spacer(Modifier.height(8.dp))
                     StatsLine(t)
                 }
+                if (t.autoSave.isNotEmpty() && t.error == null) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        (if (t.running) "Auto-saving as " else "Saved as ") + t.autoSave.joinToString(" · ") + " in the chapters folder",
+                        fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = cs.primary
+                    )
+                }
                 if (hasText) {
                     Spacer(Modifier.height(12.dp))
-                    if (finished && t.segments.isNotEmpty()) {
+                    if (finished && t.segments.isNotEmpty() && t.autoSave.isEmpty()) {
                         FormatPicker(t.format, onFormat, t.segments.any { it.words.isNotEmpty() })
                         Spacer(Modifier.height(10.dp))
                     }
@@ -1796,7 +1813,7 @@ private fun TranscriptionDialog(
                         }) {
                             Icon(painterResource(R.drawable.ic_action_share), stringResource(R.string.action_share))
                         }
-                        if (finished) {
+                        if (finished && t.autoSave.isEmpty()) {
                             IconButton(onClick = { saveLauncher.launch("$baseName.${t.format.extension}") }) {
                                 Icon(
                                     painterResource(R.drawable.ic_action_save),
