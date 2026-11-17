@@ -6,6 +6,9 @@ import kotlinx.coroutines.flow.StateFlow
 
 enum class TranscribingProgressStyle { RING, BAR }
 
+// The blocks under the header and progress that the person can put in any order.
+enum class TranscribingBlock { DETAILS, TEXT, STATS, AUTO, KEEP, HINT }
+
 // Everything the Transcribing UI can change. Off by default, so an existing install looks exactly
 // as before. The icon is a Lucide name.
 data class TranscribingUiConfig(
@@ -24,7 +27,8 @@ data class TranscribingUiConfig(
     val iconSizeDp: Int = 22,
     val showHint: Boolean = true,
     val showKeepScreen: Boolean = true,
-    val saveIcon: String = "download"
+    val saveIcon: String = "download",
+    val order: List<TranscribingBlock> = TranscribingBlock.entries.toList()
 )
 
 object TranscribingUiSettings {
@@ -67,6 +71,7 @@ object TranscribingUiSettings {
             .putBoolean("showHint", next.showHint)
             .putBoolean("showKeepScreen", next.showKeepScreen)
             .putString("saveIcon", next.saveIcon)
+            .putString("order", next.order.joinToString(",") { it.name })
             .apply()
     }
 
@@ -77,8 +82,15 @@ object TranscribingUiSettings {
             textSizeSp = c.textSizeSp.coerceIn(12, 22),
             cornerDp = c.cornerDp.coerceIn(8, 32),
             iconSizeDp = c.iconSizeDp.coerceIn(16, 32),
-            saveIcon = c.saveIcon.ifBlank { d.saveIcon }
+            saveIcon = c.saveIcon.ifBlank { d.saveIcon },
+            order = normalizeOrder(c.order)
         )
+    }
+
+    // Each block once, in the person's order; one that is missing (a build with a new block) goes last.
+    private fun normalizeOrder(order: List<TranscribingBlock>): List<TranscribingBlock> {
+        val seen = order.distinct()
+        return seen + TranscribingBlock.entries.filter { it !in seen }
     }
 
     @Synchronized
@@ -107,7 +119,11 @@ object TranscribingUiSettings {
                 iconSizeDp = p.getInt("iconSize", d.iconSizeDp),
                 showHint = p.getBoolean("showHint", d.showHint),
                 showKeepScreen = p.getBoolean("showKeepScreen", d.showKeepScreen),
-                saveIcon = p.getString("saveIcon", null) ?: d.saveIcon
+                saveIcon = p.getString("saveIcon", null) ?: d.saveIcon,
+                order = p.getString("order", null)
+                    ?.split(',')
+                    ?.mapNotNull { name -> runCatching { TranscribingBlock.valueOf(name) }.getOrNull() }
+                    ?: d.order
             )
         )
         loaded = true

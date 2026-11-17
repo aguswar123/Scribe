@@ -209,10 +209,7 @@ internal fun TranscribingContent(
                 }
                 Spacer(Modifier.height(8.dp))
             }
-            if (detailsCard) {
-                TrDetails(config, t)
-                Spacer(Modifier.height(12.dp))
-            } else {
+            if (!detailsCard) {
                 val line = trInfoLine(config, t)
                 if (line.isNotEmpty()) {
                     Text(line, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = cs.primary)
@@ -220,57 +217,68 @@ internal fun TranscribingContent(
                 }
             }
         }
-        when {
-            failed -> {
-                TrCard(config, Modifier.fillMaxWidth()) {
-                    Text(t.error ?: "", fontSize = 13.sp, color = cs.error, lineHeight = 18.sp, modifier = Modifier.padding(16.dp))
+        if (failed) {
+            TrCard(config, Modifier.fillMaxWidth()) {
+                Text(t.error ?: "", fontSize = 13.sp, color = cs.error, lineHeight = 18.sp, modifier = Modifier.padding(16.dp))
+            }
+            Spacer(Modifier.weight(1f))
+        } else {
+            // The blocks in the order the person chose, skipping the ones that are off. Without the
+            // transcript there is no block that stretches, so a spacer first pushes the rest down
+            // together and nothing is left floating with a gap under it.
+            val blocks = config.order.filter { block ->
+                when (block) {
+                    TranscribingBlock.DETAILS -> detailsCard
+                    TranscribingBlock.TEXT -> showText
+                    TranscribingBlock.STATS -> showStats && t.metrics.hasData
+                    TranscribingBlock.AUTO -> trAutoSaveShown(auto, t)
+                    TranscribingBlock.KEEP -> t.running && config.showKeepScreen
+                    TranscribingBlock.HINT -> t.running && config.showHint
                 }
+            }
+            if (TranscribingBlock.TEXT !in blocks) {
                 Spacer(Modifier.weight(1f))
             }
-            showText -> {
-                TrCard(config, Modifier.weight(1f).fillMaxWidth()) {
-                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)) {
-                        if (finished && config.formatPicker && !chapter && t.segments.isNotEmpty()) {
-                            TrFormats(t.format, t.segments.any { it.words.isNotEmpty() }, onFormat)
-                            Spacer(Modifier.height(10.dp))
-                        }
-                        val timed = t.format != TranscriptFormat.TXT && t.segments.isNotEmpty()
-                        Text(
-                            t.formatted,
-                            fontSize = if (timed) 12.sp else config.textSizeSp.sp,
-                            lineHeight = if (timed) 17.sp else (config.textSizeSp * 1.45f).sp,
-                            fontFamily = if (timed) FontFamily.Monospace else null,
-                            color = cs.onSurface
-                        )
-                    }
+            blocks.forEachIndexed { index, block ->
+                if (index > 0) {
+                    Spacer(Modifier.height(10.dp))
                 }
-            }
-            else -> Spacer(Modifier.weight(1f))
-        }
-        if (showStats && t.metrics.hasData && !failed) {
-            Spacer(Modifier.height(12.dp))
-            TrStats(config, t.metrics)
-        }
-        TrAutoSave(config, auto, t)
-        if (t.running && config.showKeepScreen) {
-            Spacer(Modifier.height(10.dp))
-            TrCard(config, Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(start = 16.dp, end = 12.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.keep_screen_title), fontSize = 13.sp, color = cs.onSurface, modifier = Modifier.weight(1f))
-                    Switch(
-                        checked = alarm.keepScreenOn,
-                        onCheckedChange = { on -> AlarmSettings.update(context) { it.copy(keepScreenOn = on) } }
+                when (block) {
+                    TranscribingBlock.DETAILS -> TrDetails(config, t)
+                    TranscribingBlock.TEXT -> TrCard(config, Modifier.weight(1f).fillMaxWidth()) {
+                        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)) {
+                            if (finished && config.formatPicker && !chapter && t.segments.isNotEmpty()) {
+                                TrFormats(t.format, t.segments.any { it.words.isNotEmpty() }, onFormat)
+                                Spacer(Modifier.height(10.dp))
+                            }
+                            val timed = t.format != TranscriptFormat.TXT && t.segments.isNotEmpty()
+                            Text(
+                                t.formatted,
+                                fontSize = if (timed) 12.sp else config.textSizeSp.sp,
+                                lineHeight = if (timed) 17.sp else (config.textSizeSp * 1.45f).sp,
+                                fontFamily = if (timed) FontFamily.Monospace else null,
+                                color = cs.onSurface
+                            )
+                        }
+                    }
+                    TranscribingBlock.STATS -> TrStats(config, t.metrics)
+                    TranscribingBlock.AUTO -> TrAutoSave(config, auto, t)
+                    TranscribingBlock.KEEP -> TrCard(config, Modifier.fillMaxWidth()) {
+                        Row(Modifier.padding(start = 16.dp, end = 12.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(stringResource(R.string.keep_screen_title), fontSize = 13.sp, color = cs.onSurface, modifier = Modifier.weight(1f))
+                            Switch(
+                                checked = alarm.keepScreenOn,
+                                onCheckedChange = { on -> AlarmSettings.update(context) { it.copy(keepScreenOn = on) } }
+                            )
+                        }
+                    }
+                    TranscribingBlock.HINT -> Text(
+                        stringResource(R.string.transcribe_background_hint),
+                        fontSize = 11.5.sp, color = cs.onSurfaceVariant, lineHeight = 16.sp,
+                        modifier = Modifier.padding(horizontal = 4.dp)
                     )
                 }
             }
-        }
-        if (t.running && config.showHint) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                stringResource(R.string.transcribe_background_hint),
-                fontSize = 11.5.sp, color = cs.onSurfaceVariant, lineHeight = 16.sp,
-                modifier = Modifier.padding(horizontal = 4.dp)
-            )
         }
         if (finished && hasText && !chapter) {
             Spacer(Modifier.height(12.dp))
@@ -486,6 +494,44 @@ private fun TrStats(config: TranscribingUiConfig, m: TranscriptionMetrics) {
     }
 }
 
+// Whether the auto save card has anything to show, so the block list can leave it out.
+private fun trAutoSaveShown(auto: AutoSaveConfig, t: TranscribeUi): Boolean {
+    if (t.error != null) return false
+    if (t.autoSave.isNotEmpty()) return true
+    if (t.running) return auto.enabled
+    return t.autoSaved != null
+}
+
+private fun trBlockLabel(block: TranscribingBlock): String = when (block) {
+    TranscribingBlock.DETAILS -> "Detailed estimates card"
+    TranscribingBlock.TEXT -> "Transcript text"
+    TranscribingBlock.STATS -> "Live performance stats"
+    TranscribingBlock.AUTO -> "Auto save card"
+    TranscribingBlock.KEEP -> "Keep screen on"
+    TranscribingBlock.HINT -> "Background hint"
+}
+
+private fun trMove(order: List<TranscribingBlock>, index: Int, delta: Int): List<TranscribingBlock> {
+    val to = index + delta
+    if (index !in order.indices || to !in order.indices) return order
+    val list = order.toMutableList()
+    val moved = list.removeAt(index)
+    list.add(to, moved)
+    return list
+}
+
+@Composable
+private fun TrMoveButton(name: String, glyph: String, enabled: Boolean, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Box(
+        Modifier.size(38.dp).alpha(if (enabled) 1f else 0.3f).clip(CircleShape).background(cs.surfaceContainerHigh)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        GlyphIcon(name, glyph, cs.onSurface, 20.dp)
+    }
+}
+
 // One compact card: while running what will be saved, afterwards what was.
 @Composable
 private fun TrAutoSave(config: TranscribingUiConfig, auto: AutoSaveConfig, t: TranscribeUi) {
@@ -519,7 +565,6 @@ private fun TrAutoSave(config: TranscribingUiConfig, auto: AutoSaveConfig, t: Tr
         line = files.joinToString(" · ") { it.substringAfterLast('.').uppercase() } + " · " + (outcome?.place ?: "")
         icon = "check"
     }
-    Spacer(Modifier.height(10.dp))
     TrCard(config, Modifier.fillMaxWidth()) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(30.dp).clip(CircleShape).background(cs.primary), contentAlignment = Alignment.Center) {
@@ -729,6 +774,22 @@ fun TranscribingUiDialog(liveStats: Boolean, onLiveStats: (Boolean) -> Unit, onD
                         "Keep screen on", "Shows the switch on this screen. Same setting as in Settings",
                         config.showKeepScreen
                     ) { on -> change { it.copy(showKeepScreen = on) } }
+
+                    SectionLabel("Order")
+                    Text(
+                        "Choose the order of the blocks on the screen. The header, progress and Save button stay where they are. Blocks that are off are skipped. With the transcript off, the rest sits together at the bottom.",
+                        fontSize = 11.5.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
+                    )
+                    config.order.forEachIndexed { index, block ->
+                        Surface(color = cs.surfaceContainer, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+                            Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(trBlockLabel(block), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.onSurface, modifier = Modifier.weight(1f))
+                                TrMoveButton("chevron-up", "▲", index > 0) { change { it.copy(order = trMove(it.order, index, -1)) } }
+                                Spacer(Modifier.width(6.dp))
+                                TrMoveButton("chevron-down", "▼", index < config.order.lastIndex) { change { it.copy(order = trMove(it.order, index, 1)) } }
+                            }
+                        }
+                    }
 
                     SectionLabel("Icons")
                     IconRow("Save icon", config.saveIcon, "⬇") { pickIcon = true }
