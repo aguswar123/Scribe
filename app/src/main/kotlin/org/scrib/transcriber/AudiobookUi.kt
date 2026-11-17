@@ -22,6 +22,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -30,6 +35,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -47,10 +54,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.scrib.transcriber.match.BatchMatchSettings
+import org.scrib.transcriber.match.BatchRun
 
 private fun abDuration(sec: Int): String = if (sec < 60) "$sec s" else "${(sec + 30) / 60} min"
 
@@ -195,6 +207,60 @@ private fun ChapterList(book: Audiobook, onBack: () -> Unit) {
         selected = if (i in selected) selected - i else selected + i
     }
 
+    // Batch: the EPUB found next to the chapters (or added by hand), and the batch dialogs.
+    remember(context) { BatchMatchSettings.load(context) }
+    var epubUri by remember(book.id) { mutableStateOf<Uri?>(null) }
+    var epubName by remember(book.id) { mutableStateOf("") }
+    var epubAuto by remember(book.id) { mutableStateOf(false) }
+    var epubChecked by remember(book.id) { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+    var showConfirm by remember { mutableStateOf(false) }
+    LaunchedEffect(book.id) {
+        val found = withContext(Dispatchers.IO) { BatchRun.findEpub(context, book) }
+        if (found != null && epubUri == null) {
+            epubUri = found.uri
+            epubName = found.name
+            epubAuto = true
+        }
+        epubChecked = true
+    }
+    val pickEpub = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            epubUri = uri
+            epubName = BatchRun.nameOf(context, uri)
+            epubAuto = false
+        }
+    }
+    if (showSettings) BatchSettingsDialog(onClose = { showSettings = false })
+    if (showConfirm) {
+        val uri = epubUri
+        AlertDialog(
+            onDismissRequest = { showConfirm = false },
+            title = { Text("Start batch?") },
+            text = {
+                Text(
+                    "Match ${selected.size} chapter${if (selected.size == 1) "" else "s"} to $epubName and save " +
+                        "${BatchRun.zipNameFor(epubName)} in the same folder as the chapters? " +
+                        "A zip with the same name there is replaced.",
+                    fontSize = 14.sp, lineHeight = 20.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showConfirm = false
+                    if (uri != null) {
+                        val files = book.chapters.filterIndexed { i, _ -> i in selected }.map { it.file }
+                        if (!BatchRun.start(context, book, files, uri, epubName)) {
+                            abToast(context, "Could not start the batch. Another batch may be running.")
+                        }
+                    }
+                }) { Text("Start") }
+            },
+            dismissButton = { TextButton(onClick = { showConfirm = false }) { Text("Cancel") } }
+        )
+    }
+    BatchRunDialog()
+
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.padding(start = 8.dp, end = 16.dp, top = 4.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -208,6 +274,67 @@ private fun ChapterList(book: Audiobook, onBack: () -> Unit) {
                         book.folderLabel, fontSize = 12.sp, color = cs.onSurfaceVariant,
                         maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
+                }
+            }
+            // The top floating bar: batch settings, the EPUB, and the Batch button.
+            Surface(
+                color = cs.surface, shape = RoundedCornerShape(26.dp), shadowElevation = 6.dp,
+                modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp)
+                    .border(1.dp, cs.outlineVariant, RoundedCornerShape(26.dp))
+            ) {
+                Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Surface(
+                        color = cs.surfaceContainer, shape = CircleShape,
+                        modifier = Modifier.size(42.dp).clickable { showSettings = true }
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            val gear = remember { LucideIcons.resolve("settings") }
+                            if (gear != null) {
+                                Icon(gear, contentDescription = "Batch settings", tint = cs.onSurface, modifier = Modifier.size(22.dp))
+                            } else {
+                                Text("⚙", fontSize = 20.sp, color = cs.onSurface)
+                            }
+                        }
+                    }
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        if (epubUri != null) {
+                            Surface(
+                                color = cs.primaryContainer, shape = RoundedCornerShape(50),
+                                modifier = Modifier.clickable { pickEpub.launch(arrayOf("*/*")) }
+                            ) {
+                                Text(
+                                    if (epubAuto) "✓ EPUB detected: $epubName" else "EPUB: $epubName",
+                                    fontSize = 12.sp, fontWeight = FontWeight.Bold, color = cs.onPrimaryContainer,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
+                                )
+                            }
+                        } else if (!epubChecked) {
+                            Text("Looking for an EPUB…", fontSize = 12.sp, color = cs.onSurfaceVariant)
+                        } else {
+                            Surface(
+                                color = cs.surfaceContainer, shape = RoundedCornerShape(50),
+                                modifier = Modifier.border(1.dp, cs.outlineVariant, RoundedCornerShape(50))
+                                    .clickable { pickEpub.launch(arrayOf("*/*")) }
+                            ) {
+                                Text(
+                                    "+ Add EPUB file", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = cs.primary,
+                                    maxLines = 1, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
+                                )
+                            }
+                        }
+                    }
+                    Button(
+                        onClick = {
+                            if (epubUri == null) abToast(context, "Add an EPUB file first.") else showConfirm = true
+                        },
+                        enabled = selected.isNotEmpty() && !BatchRun.running
+                    ) {
+                        Text(
+                            if (selected.isEmpty()) "Batch" else "Batch (${selected.size})",
+                            maxLines = 1, fontSize = 13.sp
+                        )
+                    }
                 }
             }
             LazyColumn(
@@ -346,5 +473,81 @@ fun AudiobookEntry() {
             }
             Switch(checked = on, onCheckedChange = { AudiobookStore.setTabEnabled(context, it) })
         }
+    }
+}
+
+// The settings behind the Batch button. Same options as the Match settings; they are stored in
+// their own preferences file and never change any other setting.
+@Composable
+private fun BatchSettingsDialog(onClose: () -> Unit) {
+    val context = LocalContext.current
+    val s = BatchMatchSettings
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Batch settings") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                BatchCheck("Fix case & punctuation too", s.strict) { s.strict = it; s.save(context) }
+                BatchCheck("Match the text exactly (no word limit)", s.unlimited) { s.unlimited = it; s.save(context) }
+                if (!s.unlimited) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Max words to insert", fontSize = 14.sp)
+                        OutlinedTextField(
+                            value = s.maxIns,
+                            onValueChange = { s.maxIns = it.filter { c -> c.isDigit() }.take(3); s.save(context) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.width(90.dp)
+                        )
+                    }
+                }
+                BatchCheck("Name files after the EPUB chapter", s.nameOn) { s.nameOn = it; s.save(context) }
+                if (s.nameOn) {
+                    BatchCheck("Add chapter number (01 - …)", s.nameNum) { s.nameNum = it; s.save(context) }
+                    BatchCheck("Use digits for number words (Chapter One → Chapter 1)", s.nameDig) { s.nameDig = it; s.save(context) }
+                }
+                BatchCheck("Then join broken sentences (Unbreakable)", s.unbreakable) { s.unbreakable = it; s.save(context) }
+            }
+        },
+        confirmButton = { TextButton(onClick = onClose) { Text("Done") } }
+    )
+}
+
+@Composable
+private fun BatchCheck(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onChange(!checked) },
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(checked = checked, onCheckedChange = onChange)
+        Text(label, fontSize = 14.sp, modifier = Modifier.weight(1f))
+    }
+}
+
+// Shown while a batch runs, then the outcome until it is closed.
+@Composable
+private fun BatchRunDialog() {
+    val cs = MaterialTheme.colorScheme
+    val summary = BatchRun.summary
+    if (BatchRun.running) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Batch running") },
+            text = {
+                Column {
+                    LinearProgressIndicator(progress = { BatchRun.progress }, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(10.dp))
+                    Text(BatchRun.status, fontSize = 13.sp, color = cs.onSurfaceVariant, lineHeight = 18.sp)
+                }
+            },
+            confirmButton = {}
+        )
+    } else if (summary != null) {
+        AlertDialog(
+            onDismissRequest = { BatchRun.dismiss() },
+            title = { Text("Batch") },
+            text = { Text(summary, fontSize = 14.sp, color = cs.onSurface, lineHeight = 20.sp) },
+            confirmButton = { TextButton(onClick = { BatchRun.dismiss() }) { Text("Close") } }
+        )
     }
 }

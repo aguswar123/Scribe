@@ -168,6 +168,7 @@ dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
     implementation 'com.composables:icons-lucide:1.1.0'
     implementation 'androidx.documentfile:documentfile:1.0.1'
+    implementation 'org.jsoup:jsoup:1.18.1'
     // Splits audiobooks into chapters (the same FFmpegKit build STools uses).
     implementation 'io.github.maitrungduc1410:ffmpeg-kit-min:6.0.1'
     testImplementation 'junit:junit:4.13.2'
