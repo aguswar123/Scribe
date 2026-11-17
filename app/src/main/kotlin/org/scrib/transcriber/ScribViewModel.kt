@@ -93,7 +93,9 @@ data class TranscribeUi(
     val decoding: Boolean = false,
     val decodeLeftMs: Long? = null,
     // Formats saved on their own when the run ends (audiobook chapters); empty for every other run.
-    val autoSave: List<String> = emptyList()
+    val autoSave: List<String> = emptyList(),
+    // What the Transcribing UI's auto save wrote for this file once it finished; null when it is off.
+    val autoSaved: AutoSaveOutcome? = null
 ) {
     // What the screen shows and what Copy, Share and Save hand over. Falls back to the plain text
     // while the run is still going and when nothing was recognised.

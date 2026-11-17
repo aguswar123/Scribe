@@ -174,11 +174,13 @@ fun ScribScreen(
     var showNewUi by rememberSaveable { mutableStateOf(false) }
     var showHomeUi by rememberSaveable { mutableStateOf(false) }
     var showRecordUi by rememberSaveable { mutableStateOf(false) }
+    var showTranscribingUi by rememberSaveable { mutableStateOf(false) }
 
     val context = LocalContext.current
     val newUi by NewUiSettings.flow(context).collectAsState()
     val audiobookOn by AudiobookStore.tabEnabled(context).collectAsState()
     val recordUi by RecordUiSettings.flow(context).collectAsState()
+    val transcribingUi by TranscribingUiSettings.flow(context).collectAsState()
     val barItems = ScribTab.entries.map {
         NewBarItem("scrib/tab/${it.name.lowercase()}", stringResource(it.labelRes), it.icon)
     }
@@ -315,6 +317,7 @@ fun ScribScreen(
                     onOpenNewUi = { showNewUi = true },
                     onOpenHomeUi = { showHomeUi = true },
                     onOpenRecordUi = { showRecordUi = true },
+                    onOpenTranscribingUi = { showTranscribingUi = true },
                     onAbout = onAbout,
                     onOpenChangelog = { showChangelog = true },
                     onSelfTest = onSelfTest,
@@ -346,6 +349,13 @@ fun ScribScreen(
     }
     if (showRecordUi) {
         RecordUiDialog(onDismiss = { showRecordUi = false })
+    }
+    if (showTranscribingUi) {
+        TranscribingUiDialog(
+            liveStats = state.liveStats,
+            onLiveStats = onLiveStats,
+            onDismiss = { showTranscribingUi = false }
+        )
     }
 
     if (showAdd) {
@@ -384,10 +394,18 @@ fun ScribScreen(
     }
     if (transcription != null && !state.benchmarkBatch.running) {
         transcription?.let { t ->
+        if (transcribingUi.enabled) {
+            TranscribingScreen(
+                config = transcribingUi, t = t, showStats = state.liveStats,
+                onCancel = onCancelTranscription, onClose = onDismissTranscription,
+                onSave = onSaveTranscript, onFormat = onTranscriptFormat
+            )
+        } else {
         TranscriptionDialog(
             t, showStats = state.liveStats, onCancel = onCancelTranscription, onClose = onDismissTranscription,
             onSave = onSaveTranscript, onFormat = onTranscriptFormat
         )
+        }
         }
     }
     openHistoryId?.let { id ->
@@ -965,6 +983,7 @@ private fun SettingsTab(
     onOpenNewUi: () -> Unit,
     onOpenHomeUi: () -> Unit,
     onOpenRecordUi: () -> Unit,
+    onOpenTranscribingUi: () -> Unit,
     onAbout: () -> Unit,
     onOpenChangelog: () -> Unit,
     onSelfTest: () -> Unit,
@@ -1107,6 +1126,15 @@ private fun SettingsTab(
                 config = recordUiConfig,
                 onToggle = { on -> RecordUiSettings.update(context) { it.copy(enabled = on) } },
                 onOpen = onOpenRecordUi
+            )
+        }
+        item {
+            val context = LocalContext.current
+            val transcribingUiConfig by TranscribingUiSettings.flow(context).collectAsState()
+            TranscribingUiEntry(
+                config = transcribingUiConfig,
+                onToggle = { on -> TranscribingUiSettings.update(context) { it.copy(enabled = on) } },
+                onOpen = onOpenTranscribingUi
             )
         }
         if (BuildConfig.LOCAL_MODELS) {
@@ -1704,7 +1732,7 @@ private fun BenchmarkBatchControl(
 
 // Pre-fills the save dialog with the transcript name and, when the provider supports it, opens
 // the picker at the source recording's location — SAF cannot write there without the user's pick.
-private class CreateTranscriptDocument(private val initialUri: Uri?, mimeType: String) : ActivityResultContracts.CreateDocument(mimeType) {
+internal class CreateTranscriptDocument(private val initialUri: Uri?, mimeType: String) : ActivityResultContracts.CreateDocument(mimeType) {
     override fun createIntent(context: Context, input: String): Intent =
         super.createIntent(context, input).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
@@ -1717,7 +1745,7 @@ private class CreateTranscriptDocument(private val initialUri: Uri?, mimeType: S
 // Document providers rewrite a file name whose extension disagrees with the type they were asked
 // for — .srt would come back as .srt.txt. Asking for the type the platform itself maps the
 // extension to keeps the name, and an unmapped one passes as an opaque file rather than as text.
-private fun transcriptMimeType(format: TranscriptFormat): String =
+internal fun transcriptMimeType(format: TranscriptFormat): String =
     MimeTypeMap.getSingleton().getMimeTypeFromExtension(format.extension) ?: "application/octet-stream"
 
 @Composable

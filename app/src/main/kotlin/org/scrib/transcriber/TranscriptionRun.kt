@@ -376,6 +376,21 @@ object TranscriptionRun {
                             TranscriptHistory.save(app, it)
                             _historyUpdates.value += 1
                         }
+                        // The Transcribing UI's auto save writes the chosen formats beside the audio (or
+                        // into the chosen folder). Audiobook chapters have their own, so they are skipped.
+                        _state.value?.let { done ->
+                            if (done.autoSave.isEmpty()) {
+                                val outcome = try {
+                                    AutoSave.run(app, done)
+                                } catch (e: Throwable) {
+                                    StateLog.log("auto save crashed: ${e.message}")
+                                    null
+                                }
+                                if (outcome != null) {
+                                    _state.update { s -> s?.copy(autoSaved = outcome) }
+                                }
+                            }
+                        }
                     }
                     // Audiobook chapters save their subtitles next to the chapter file on their own.
                     if (persistTranscript && segments.isNotEmpty()) AudiobookRuns.onFinished(app, uri, segments)
