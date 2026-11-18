@@ -198,7 +198,12 @@ object TranscriptionRun {
             } else {
                 null
             }
-            val benchmarkHistory = BenchmarkStore.load(app)
+            // Speed mode has its own history and its own ETA. Only real transcriptions use it; the
+            // benchmark batch and throw-away runs keep to the normal history.
+            val speedMode = persistTranscript && SpeedMode.isEnabled(app)
+            SpeedMode.runActive = speedMode
+            SpeedMode.usedParallel = false
+            val benchmarkHistory = if (speedMode) SpeedStore.load(app) else BenchmarkStore.load(app)
             val historySpeed = EtaEstimator.speedFor(benchmarkHistory, modelName)
             val historyDecodeSpeed = EtaEstimator.decodeSpeedFor(benchmarkHistory)
             val knownDurationMs = EtaEstimator.audioDurationMs(app, uri) ?: 0L
@@ -358,15 +363,19 @@ object TranscriptionRun {
                     publishMetrics()
                     if (!ephemeral) {
                         _state.value?.metrics?.let { metrics ->
-                            BenchmarkStore.record(
-                                app,
-                                BenchmarkRun(
-                                    timestampMs = System.currentTimeMillis(),
-                                    modelName = modelName,
-                                    fileName = name,
-                                    metrics = metrics
-                                )
+                            val finished = BenchmarkRun(
+                                timestampMs = System.currentTimeMillis(),
+                                modelName = modelName,
+                                fileName = name,
+                                metrics = metrics
                             )
+                            // A run goes to the Speed history only if its windows really were decoded
+                            // side by side; anything else is an ordinary run.
+                            if (speedMode && SpeedMode.usedParallel) {
+                                SpeedStore.record(app, finished)
+                            } else {
+                                BenchmarkStore.record(app, finished)
+                            }
                         }
                     }
 
@@ -435,6 +444,7 @@ object TranscriptionRun {
                     StateLog.log("run failed: file=$name error=${e.message}")
                 }
             } finally {
+                SpeedMode.runActive = false
                 metricsJob?.cancelAndJoin()
                 progressJob?.cancelAndJoin()
                 decodeJob.cancelAndJoin()

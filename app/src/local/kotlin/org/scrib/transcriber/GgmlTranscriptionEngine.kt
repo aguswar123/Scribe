@@ -11,6 +11,8 @@ import org.opentranscribe.api.TranscriberCapabilities
 import org.opentranscribe.api.TranscriptionRequest
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class GgmlTranscriptionEngine(private val appContext: Context) : TranscriptionEngine {
 
@@ -220,20 +222,29 @@ class GgmlTranscriptionEngine(private val appContext: Context) : TranscriptionEn
         }
         val segments = ArrayList<TranscriptSegment>(windows)
         val cumulative = StringBuilder()
+        // Speed mode: some or all windows may already be done by the side-by-side workers. Whatever
+        // is still missing (Speed mode off, a worker failed, no second session) runs below exactly
+        // as it always did, one window after another.
+        val early = arrayOfNulls<RunResult>(windows)
+        if (SpeedMode.runActive && windows >= 2) {
+            runWindowsSideBySide(info, audio, window, windows, language, abort, cancellation, early, onProgress)
+        }
         for (i in 0 until windows) {
             if (cancellation.isCancelled) {
                 throw CancelledException()
             }
             val offset = i * window
             val length = if (i == windows - 1) audio.sampleCount - offset else window
-            onProgress(i * 100 / windows)
-            val result = runUtterance(
-                live, info, audio, offset, length, language, abort,
-                onPartial = { partial ->
-                    cumulative.append(partial)
-                    onPartial(cumulative.toString())
-                }
-            )
+            val result = early[i] ?: run {
+                onProgress(i * 100 / windows)
+                runUtterance(
+                    live, info, audio, offset, length, language, abort,
+                    onPartial = { partial ->
+                        cumulative.append(partial)
+                        onPartial(cumulative.toString())
+                    }
+                )
+            }
             if (cancellation.isCancelled) {
                 throw CancelledException()
             }
@@ -244,6 +255,63 @@ class GgmlTranscriptionEngine(private val appContext: Context) : TranscriptionEn
             )
         }
         return finishSegments(segments, emptyList())
+    }
+
+    // Speed mode: two extra sessions on the same model, each with half the threads, take windows from
+    // a shared counter. Results go into `results` by window number, so the order of the text never
+    // depends on which session finished first. On any problem the windows left empty are decoded by
+    // the normal loop, so Speed mode can only fall back to the old behaviour.
+    private fun runWindowsSideBySide(
+        info: TranscribeModelInfo,
+        audio: RunAudio,
+        window: Int,
+        windows: Int,
+        language: String?,
+        abort: TranscribeAbort,
+        cancellation: CancellationToken,
+        results: Array<RunResult?>,
+        onProgress: (Int) -> Unit
+    ) {
+        val threads = (CpuConfig.preferredThreadCount / 2).coerceAtLeast(1)
+        val sessions = ArrayList<TranscribeSession>(SIDE_BY_SIDE)
+        try {
+            val loaded = model()
+            repeat(SIDE_BY_SIDE) { sessions.add(loaded.openSession(threads)) }
+        } catch (e: Throwable) {
+            Log.w("GgmlEngine", "Speed mode: couldn't open a second session, running normally", e)
+            sessions.forEach { it.release() }
+            return
+        }
+        val next = AtomicInteger(0)
+        val finished = AtomicInteger(0)
+        val failed = AtomicBoolean(false)
+        val progressLock = Any()
+        val workers = sessions.map { worker ->
+            Thread {
+                try {
+                    while (!failed.get() && !cancellation.isCancelled) {
+                        val i = next.getAndIncrement()
+                        if (i >= windows) break
+                        val offset = i * window
+                        val length = if (i == windows - 1) audio.sampleCount - offset else window
+                        results[i] = runUtterance(worker, info, audio, offset, length, language, abort)
+                        val done = finished.incrementAndGet()
+                        synchronized(progressLock) { onProgress(done * 100 / windows) }
+                    }
+                } catch (e: Throwable) {
+                    failed.set(true)
+                    if (!cancellation.isCancelled) {
+                        Log.w("GgmlEngine", "Speed mode: a window failed, finishing normally", e)
+                    }
+                }
+            }.also { it.start() }
+        }
+        try {
+            workers.forEach { it.join() }
+        } finally {
+            sessions.forEach { it.release() }
+        }
+        SpeedMode.usedParallel = !failed.get() && !cancellation.isCancelled && results.all { it != null }
     }
 
     private fun runAudio(pcm: DecodedAudio, info: TranscribeModelInfo): RunAudio {
@@ -476,5 +544,8 @@ class GgmlTranscriptionEngine(private val appContext: Context) : TranscriptionEn
         const val WINDOW_SAMPLES = SAMPLE_RATE * 30
 
         const val MIN_TRANSCRIBABLE_WINDOW_SAMPLES = SAMPLE_RATE
+
+        // How many windows Speed mode decodes at the same time.
+        const val SIDE_BY_SIDE = 2
     }
 }

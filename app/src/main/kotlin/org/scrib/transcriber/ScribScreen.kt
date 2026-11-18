@@ -1141,6 +1141,9 @@ private fun SettingsTab(
             item { BenchmarkEntry(state.benchmarkRuns, onOpenBenchmarks) }
         }
         item { EtaHistoryEntry(onOpenEtaHistory) }
+        if (BuildConfig.LOCAL_MODELS) {
+            item { SpeedModeEntries() }
+        }
         item { ChangelogEntry(onOpenChangelog) }
     }
 }

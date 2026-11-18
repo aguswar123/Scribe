@@ -108,6 +108,20 @@
     <string name="eta_left" translatable="false">~%1$s left</string>
     <string name="eta_source_live" translatable="false">Based on this run\'s current speed</string>
     <string name="eta_source_history" translatable="false">Based on your history with this model</string>
+    <string name="speed_mode_title" translatable="false">Speed mode</string>
+    <string name="speed_mode_sub" translatable="false">Decode two windows at once. Off by default</string>
+    <string name="speed_mode_on" translatable="false">On: two windows at once, own history and ETA</string>
+    <string name="speed_history" translatable="false">Speed history</string>
+    <string name="speed_history_sub" translatable="false">%1$d runs · its own ETA</string>
+    <string name="speed_history_empty" translatable="false">No Speed mode runs yet. Turn Speed mode on and transcribe a file; its ETA appears after the first run.</string>
+    <string name="speed_eta_title" translatable="false">ETA (Speed mode only)</string>
+    <string name="speed_eta_line" translatable="false">%1$s · %2$d runs · speed %3$s× · 1 min audio ≈ %4$s</string>
+    <string name="speed_runs_title" translatable="false">Runs</string>
+    <string name="speed_clear_title" translatable="false">Clear Speed history?</string>
+    <string name="speed_clear_message" translatable="false">This deletes only the Speed mode runs. Benchmark history is not affected.</string>
+    <string name="speed_history_exported" translatable="false">Speed history exported.</string>
+    <string name="speed_history_export_failed" translatable="false">Couldn\'t export Speed history.</string>
+    <string name="speed_history_clear_failed" translatable="false">Couldn\'t clear Speed history.</string>
     <string name="eta_history" translatable="false">ETA history</string>
     <string name="eta_history_subtitle" translatable="false">Speed per model, used for the estimates</string>
     <string name="eta_history_empty" translatable="false">No completed transcription runs yet. Estimates will appear after your first transcription.</string>
