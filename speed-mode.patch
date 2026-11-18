@@ -1,0 +1,608 @@
+diff --git a/app/src/local/kotlin/org/scrib/transcriber/GgmlTranscriptionEngine.kt b/app/src/local/kotlin/org/scrib/transcriber/GgmlTranscriptionEngine.kt
+index d1bdbff..22509cf 100644
+--- a/app/src/local/kotlin/org/scrib/transcriber/GgmlTranscriptionEngine.kt
++++ b/app/src/local/kotlin/org/scrib/transcriber/GgmlTranscriptionEngine.kt
+@@ -11,6 +11,8 @@ import org.opentranscribe.api.TranscriberCapabilities
+ import org.opentranscribe.api.TranscriptionRequest
+ import java.nio.ByteBuffer
+ import java.nio.ByteOrder
++import java.util.concurrent.atomic.AtomicBoolean
++import java.util.concurrent.atomic.AtomicInteger
+ 
+ class GgmlTranscriptionEngine(private val appContext: Context) : TranscriptionEngine {
+ 
+@@ -220,20 +222,29 @@ class GgmlTranscriptionEngine(private val appContext: Context) : TranscriptionEn
+         }
+         val segments = ArrayList<TranscriptSegment>(windows)
+         val cumulative = StringBuilder()
++        // Speed mode: some or all windows may already be done by the side-by-side workers. Whatever
++        // is still missing (Speed mode off, a worker failed, no second session) runs below exactly
++        // as it always did, one window after another.
++        val early = arrayOfNulls<RunResult>(windows)
++        if (SpeedMode.runActive && windows >= 2) {
++            runWindowsSideBySide(info, audio, window, windows, language, abort, cancellation, early, onProgress)
++        }
+         for (i in 0 until windows) {
+             if (cancellation.isCancelled) {
+                 throw CancelledException()
+             }
+             val offset = i * window
+             val length = if (i == windows - 1) audio.sampleCount - offset else window
+-            onProgress(i * 100 / windows)
+-            val result = runUtterance(
+-                live, info, audio, offset, length, language, abort,
+-                onPartial = { partial ->
+-                    cumulative.append(partial)
+-                    onPartial(cumulative.toString())
+-                }
+-            )
++            val result = early[i] ?: run {
++                onProgress(i * 100 / windows)
++                runUtterance(
++                    live, info, audio, offset, length, language, abort,
++                    onPartial = { partial ->
++                        cumulative.append(partial)
++                        onPartial(cumulative.toString())
++                    }
++                )
++            }
+             if (cancellation.isCancelled) {
+                 throw CancelledException()
+             }
+@@ -246,6 +257,63 @@ class GgmlTranscriptionEngine(private val appContext: Context) : TranscriptionEn
+         return finishSegments(segments, emptyList())
+     }
+ 
++    // Speed mode: two extra sessions on the same model, each with half the threads, take windows from
++    // a shared counter. Results go into `results` by window number, so the order of the text never
++    // depends on which session finished first. On any problem the windows left empty are decoded by
++    // the normal loop, so Speed mode can only fall back to the old behaviour.
++    private fun runWindowsSideBySide(
++        info: TranscribeModelInfo,
++        audio: RunAudio,
++        window: Int,
++        windows: Int,
++        language: String?,
++        abort: TranscribeAbort,
++        cancellation: CancellationToken,
++        results: Array<RunResult?>,
++        onProgress: (Int) -> Unit
++    ) {
++        val threads = (CpuConfig.preferredThreadCount / 2).coerceAtLeast(1)
++        val sessions = ArrayList<TranscribeSession>(SIDE_BY_SIDE)
++        try {
++            val loaded = model()
++            repeat(SIDE_BY_SIDE) { sessions.add(loaded.openSession(threads)) }
++        } catch (e: Throwable) {
++            Log.w("GgmlEngine", "Speed mode: couldn't open a second session, running normally", e)
++            sessions.forEach { it.release() }
++            return
++        }
++        val next = AtomicInteger(0)
++        val finished = AtomicInteger(0)
++        val failed = AtomicBoolean(false)
++        val progressLock = Any()
++        val workers = sessions.map { worker ->
++            Thread {
++                try {
++                    while (!failed.get() && !cancellation.isCancelled) {
++                        val i = next.getAndIncrement()
++                        if (i >= windows) break
++                        val offset = i * window
++                        val length = if (i == windows - 1) audio.sampleCount - offset else window
++                        results[i] = runUtterance(worker, info, audio, offset, length, language, abort)
++                        val done = finished.incrementAndGet()
++                        synchronized(progressLock) { onProgress(done * 100 / windows) }
++                    }
++                } catch (e: Throwable) {
++                    failed.set(true)
++                    if (!cancellation.isCancelled) {
++                        Log.w("GgmlEngine", "Speed mode: a window failed, finishing normally", e)
++                    }
++                }
++            }.also { it.start() }
++        }
++        try {
++            workers.forEach { it.join() }
++        } finally {
++            sessions.forEach { it.release() }
++        }
++        SpeedMode.usedParallel = !failed.get() && !cancellation.isCancelled && results.all { it != null }
++    }
++
+     private fun runAudio(pcm: DecodedAudio, info: TranscribeModelInfo): RunAudio {
+         val path = ModelManager.vadModelPath(appContext)
+         if (path == null || info.streaming || !ModelManager.activeModelUsesVad(appContext)) {
+@@ -476,5 +544,8 @@ class GgmlTranscriptionEngine(private val appContext: Context) : TranscriptionEn
+         const val WINDOW_SAMPLES = SAMPLE_RATE * 30
+ 
+         const val MIN_TRANSCRIBABLE_WINDOW_SAMPLES = SAMPLE_RATE
++
++        // How many windows Speed mode decodes at the same time.
++        const val SIDE_BY_SIDE = 2
+     }
+ }
+diff --git a/app/src/main/kotlin/org/scrib/transcriber/ScribScreen.kt b/app/src/main/kotlin/org/scrib/transcriber/ScribScreen.kt
+index 74073cc..206c092 100644
+--- a/app/src/main/kotlin/org/scrib/transcriber/ScribScreen.kt
++++ b/app/src/main/kotlin/org/scrib/transcriber/ScribScreen.kt
+@@ -1141,6 +1141,9 @@ private fun SettingsTab(
+             item { BenchmarkEntry(state.benchmarkRuns, onOpenBenchmarks) }
+         }
+         item { EtaHistoryEntry(onOpenEtaHistory) }
++        if (BuildConfig.LOCAL_MODELS) {
++            item { SpeedModeEntries() }
++        }
+         item { ChangelogEntry(onOpenChangelog) }
+     }
+ }
+diff --git a/app/src/main/kotlin/org/scrib/transcriber/SpeedMode.kt b/app/src/main/kotlin/org/scrib/transcriber/SpeedMode.kt
+new file mode 100644
+index 0000000..a4c81b8
+--- /dev/null
++++ b/app/src/main/kotlin/org/scrib/transcriber/SpeedMode.kt
+@@ -0,0 +1,168 @@
++package org.scrib.transcriber
++
++import android.content.Context
++import android.util.Log
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.StateFlow
++import org.json.JSONArray
++import org.json.JSONObject
++import java.io.File
++
++// Speed mode: the local engine decodes two 30-second windows at the same time. It is off by default
++// and has nothing to do with the Benchmark history or the ETA history -- its runs live in
++// SpeedStore, and its estimates come from there alone.
++object SpeedMode {
++    private const val PREFS = "speed-mode"
++    private const val KEY_ENABLED = "enabled"
++
++    private val state = MutableStateFlow(false)
++
++    @Volatile
++    private var loaded = false
++
++    // Set by TranscriptionRun for the run it is about to start; read by the engine. Only one run
++    // happens at a time, so a plain flag is enough.
++    @Volatile
++    var runActive = false
++
++    // Set by the engine when the windows really were decoded side by side.
++    @Volatile
++    var usedParallel = false
++
++    @Synchronized
++    private fun ensureLoaded(context: Context) {
++        if (loaded) return
++        state.value = context.applicationContext
++            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
++            .getBoolean(KEY_ENABLED, false)
++        loaded = true
++    }
++
++    fun flow(context: Context): StateFlow<Boolean> {
++        ensureLoaded(context)
++        return state
++    }
++
++    fun isEnabled(context: Context): Boolean {
++        ensureLoaded(context)
++        return state.value
++    }
++
++    fun setEnabled(context: Context, enabled: Boolean) {
++        ensureLoaded(context)
++        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
++            .putBoolean(KEY_ENABLED, enabled).apply()
++        state.value = enabled
++    }
++}
++
++// The history of runs made with Speed mode. Same shape as the Benchmark history so the ETA maths
++// can be reused, but a different file: the two never mix.
++object SpeedStore {
++    private const val FILE_NAME = "speed-history.json"
++    private const val MAX_RUNS = 100
++    private const val LOG_TAG = "SpeedStore"
++
++    private val _revisions = MutableStateFlow(0L)
++    val revisions: StateFlow<Long> = _revisions
++
++    @Synchronized
++    fun record(context: Context, run: BenchmarkRun) {
++        val runs = load(context).toMutableList()
++        runs.add(0, run)
++        if (runs.size > MAX_RUNS) {
++            runs.subList(MAX_RUNS, runs.size).clear()
++        }
++        try {
++            file(context).writeText(serialize(runs))
++            _revisions.value += 1
++        } catch (e: Throwable) {
++            Log.w(LOG_TAG, "Couldn't save speed history", e)
++        }
++    }
++
++    @Synchronized
++    fun clear(context: Context): Boolean {
++        val file = file(context)
++        if (!file.exists()) return true
++        return try {
++            if (file.delete()) {
++                _revisions.value += 1
++                true
++            } else {
++                false
++            }
++        } catch (e: Throwable) {
++            Log.w(LOG_TAG, "Couldn't clear speed history", e)
++            false
++        }
++    }
++
++    @Synchronized
++    fun exportJson(context: Context): String = serialize(load(context))
++
++    @Synchronized
++    fun load(context: Context): List<BenchmarkRun> {
++        val file = file(context)
++        if (!file.exists()) return emptyList()
++        return try {
++            val array = JSONArray(file.readText())
++            ArrayList<BenchmarkRun>(array.length()).apply {
++                for (i in 0 until array.length()) {
++                    val item = array.getJSONObject(i)
++                    val m = item.optJSONObject("metrics") ?: JSONObject()
++                    add(
++                        BenchmarkRun(
++                            timestampMs = item.optLong("timestampMs"),
++                            modelName = item.optString("model").takeIf { it.isNotBlank() },
++                            fileName = item.optString("file"),
++                            metrics = TranscriptionMetrics(
++                                audioDurationMs = m.optLong("audioDurationMs"),
++                                decodeMs = m.optLong("decodeMs"),
++                                inferenceMs = m.optLong("inferenceMs"),
++                                modelLoadMs = m.optLong("modelLoadMs"),
++                                modelPssMb = m.optInt("modelPssMb"),
++                                modelMemoryDeltaMb = m.optInt("modelMemoryDeltaMb"),
++                                totalMs = m.optLong("totalMs"),
++                                pssMb = m.optInt("pssMb"),
++                                peakPssMb = m.optInt("peakPssMb"),
++                                freeRamMb = m.optInt("freeRamMb")
++                            )
++                        )
++                    )
++                }
++            }.sortedByDescending { it.timestampMs }
++        } catch (e: Throwable) {
++            Log.w(LOG_TAG, "Couldn't read speed history", e)
++            emptyList()
++        }
++    }
++
++    private fun serialize(runs: List<BenchmarkRun>): String {
++        val array = JSONArray()
++        runs.forEach { run ->
++            array.put(
++                JSONObject()
++                    .put("timestampMs", run.timestampMs)
++                    .put("model", run.modelName)
++                    .put("file", run.fileName)
++                    .put(
++                        "metrics", JSONObject()
++                            .put("audioDurationMs", run.metrics.audioDurationMs)
++                            .put("decodeMs", run.metrics.decodeMs)
++                            .put("inferenceMs", run.metrics.inferenceMs)
++                            .put("modelLoadMs", run.metrics.modelLoadMs)
++                            .put("modelPssMb", run.metrics.modelPssMb)
++                            .put("modelMemoryDeltaMb", run.metrics.modelMemoryDeltaMb)
++                            .put("totalMs", run.metrics.totalMs)
++                            .put("pssMb", run.metrics.pssMb)
++                            .put("peakPssMb", run.metrics.peakPssMb)
++                            .put("freeRamMb", run.metrics.freeRamMb)
++                    )
++            )
++        }
++        return array.toString()
++    }
++
++    private fun file(context: Context) = File(context.filesDir, FILE_NAME)
++}
+diff --git a/app/src/main/kotlin/org/scrib/transcriber/SpeedModeUi.kt b/app/src/main/kotlin/org/scrib/transcriber/SpeedModeUi.kt
+new file mode 100644
+index 0000000..c48f9a5
+--- /dev/null
++++ b/app/src/main/kotlin/org/scrib/transcriber/SpeedModeUi.kt
+@@ -0,0 +1,211 @@
++package org.scrib.transcriber
++
++import android.widget.Toast
++import androidx.activity.compose.rememberLauncherForActivityResult
++import androidx.activity.result.contract.ActivityResultContracts
++import androidx.compose.foundation.clickable
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.Spacer
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.heightIn
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.layout.width
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.foundation.verticalScroll
++import androidx.compose.material3.AlertDialog
++import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.Surface
++import androidx.compose.material3.Switch
++import androidx.compose.material3.Text
++import androidx.compose.material3.TextButton
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.collectAsState
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.remember
++import androidx.compose.runtime.saveable.rememberSaveable
++import androidx.compose.runtime.setValue
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.draw.clip
++import androidx.compose.ui.platform.LocalContext
++import androidx.compose.ui.res.stringResource
++import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.unit.dp
++import androidx.compose.ui.unit.sp
++import java.util.Locale
++
++// Two rows for the settings list: the Speed mode switch, and the Speed history (its own runs and
++// its own ETA). Self-contained so nothing else has to be wired through.
++@Composable
++internal fun SpeedModeEntries() {
++    val cs = MaterialTheme.colorScheme
++    val context = LocalContext.current
++    val enabled by SpeedMode.flow(context).collectAsState()
++    val revision by SpeedStore.revisions.collectAsState()
++    val runs = remember(revision) { SpeedStore.load(context) }
++    var showHistory by rememberSaveable { mutableStateOf(false) }
++    val shape = RoundedCornerShape(16.dp)
++
++    Surface(
++        color = cs.surfaceContainer, shape = shape,
++        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(shape)
++            .clickable { SpeedMode.setEnabled(context, !enabled) }
++    ) {
++        Row(
++            Modifier.padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 14.dp),
++            verticalAlignment = Alignment.CenterVertically
++        ) {
++            Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
++                Text("⚡", fontSize = 18.sp)
++            }
++            Spacer(Modifier.width(12.dp))
++            Column(Modifier.weight(1f)) {
++                Text(
++                    stringResource(R.string.speed_mode_title),
++                    fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.onSurface
++                )
++                Text(
++                    stringResource(if (enabled) R.string.speed_mode_on else R.string.speed_mode_sub),
++                    fontSize = 12.sp, fontWeight = FontWeight.Medium,
++                    color = cs.onSurfaceVariant, lineHeight = 16.sp
++                )
++            }
++            Spacer(Modifier.width(8.dp))
++            Switch(checked = enabled, onCheckedChange = { SpeedMode.setEnabled(context, it) })
++        }
++    }
++
++    Surface(
++        color = cs.surfaceContainer, shape = shape,
++        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(shape)
++            .clickable { showHistory = true }
++    ) {
++        Row(
++            Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
++            verticalAlignment = Alignment.CenterVertically
++        ) {
++            Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
++                Text("⚡", fontSize = 18.sp, color = cs.primary)
++            }
++            Spacer(Modifier.width(12.dp))
++            Column(Modifier.weight(1f)) {
++                Text(
++                    stringResource(R.string.speed_history),
++                    fontSize = 14.sp, fontWeight = FontWeight.Bold, color = cs.onSurface
++                )
++                Text(
++                    stringResource(R.string.speed_history_sub, runs.size),
++                    fontSize = 12.sp, fontWeight = FontWeight.Medium,
++                    color = cs.onSurfaceVariant, lineHeight = 16.sp
++                )
++            }
++            Spacer(Modifier.width(16.dp))
++            Text("›", fontSize = 22.sp, color = cs.onSurfaceVariant)
++        }
++    }
++
++    if (showHistory) {
++        SpeedHistoryDialog(runs, onDismiss = { showHistory = false })
++    }
++}
++
++@Composable
++private fun SpeedHistoryDialog(runs: List<BenchmarkRun>, onDismiss: () -> Unit) {
++    val cs = MaterialTheme.colorScheme
++    val context = LocalContext.current
++    val groups = remember(runs) { EtaEstimator.summaries(runs) }
++    var confirmClear by rememberSaveable { mutableStateOf(false) }
++    val exportLauncher = rememberLauncherForActivityResult(
++        ActivityResultContracts.CreateDocument("application/json")
++    ) { uri ->
++        if (uri != null) {
++            val message = try {
++                context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use {
++                    it.write(SpeedStore.exportJson(context))
++                } ?: throw RuntimeException("cannot write")
++                R.string.speed_history_exported
++            } catch (e: Throwable) {
++                R.string.speed_history_export_failed
++            }
++            Toast.makeText(context, context.getString(message), Toast.LENGTH_SHORT).show()
++        }
++    }
++    AlertDialog(
++        onDismissRequest = onDismiss,
++        containerColor = cs.background,
++        tonalElevation = 0.dp,
++        title = { Text(stringResource(R.string.speed_history)) },
++        text = {
++            if (runs.isEmpty()) {
++                Text(stringResource(R.string.speed_history_empty), fontSize = 13.sp, color = cs.onSurfaceVariant)
++            } else {
++                Column(
++                    Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState()),
++                    verticalArrangement = Arrangement.spacedBy(8.dp)
++                ) {
++                    Text(
++                        stringResource(R.string.speed_eta_title),
++                        fontSize = 13.sp, fontWeight = FontWeight.Bold, color = cs.onSurface
++                    )
++                    groups.forEach { stats ->
++                        Text(
++                            stringResource(
++                                R.string.speed_eta_line,
++                                stats.modelName,
++                                stats.runs.size,
++                                String.format(Locale.ROOT, "%.2f", stats.speed),
++                                preciseDuration((60_000 * stats.speed).toLong())
++                            ),
++                            fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = cs.primary
++                        )
++                    }
++                    Text(
++                        stringResource(R.string.speed_runs_title),
++                        fontSize = 13.sp, fontWeight = FontWeight.Bold, color = cs.onSurface,
++                        modifier = Modifier.padding(top = 6.dp)
++                    )
++                    runs.forEach { run -> BenchmarkRunCard(run) }
++                }
++            }
++        },
++        dismissButton = {
++            Row {
++                TextButton(
++                    onClick = { exportLauncher.launch("scrib-speed-history.json") },
++                    enabled = runs.isNotEmpty()
++                ) { Text(stringResource(R.string.benchmark_export_json)) }
++                TextButton(onClick = { confirmClear = true }, enabled = runs.isNotEmpty()) {
++                    Text(stringResource(R.string.benchmark_clear_history), color = cs.error)
++                }
++            }
++        },
++        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) } }
++    )
++    if (confirmClear) {
++        AlertDialog(
++            onDismissRequest = { confirmClear = false },
++            containerColor = cs.background,
++            tonalElevation = 0.dp,
++            title = { Text(stringResource(R.string.speed_clear_title)) },
++            text = { Text(stringResource(R.string.speed_clear_message)) },
++            dismissButton = {
++                TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.action_cancel)) }
++            },
++            confirmButton = {
++                TextButton(onClick = {
++                    confirmClear = false
++                    if (!SpeedStore.clear(context)) {
++                        Toast.makeText(
++                            context, context.getString(R.string.speed_history_clear_failed), Toast.LENGTH_SHORT
++                        ).show()
++                    }
++                }) { Text(stringResource(R.string.benchmark_clear_history), color = cs.error) }
++            }
++        )
++    }
++}
+diff --git a/app/src/main/kotlin/org/scrib/transcriber/TranscriptionRun.kt b/app/src/main/kotlin/org/scrib/transcriber/TranscriptionRun.kt
+index d5a0140..3041086 100644
+--- a/app/src/main/kotlin/org/scrib/transcriber/TranscriptionRun.kt
++++ b/app/src/main/kotlin/org/scrib/transcriber/TranscriptionRun.kt
+@@ -198,7 +198,12 @@ object TranscriptionRun {
+             } else {
+                 null
+             }
+-            val benchmarkHistory = BenchmarkStore.load(app)
++            // Speed mode has its own history and its own ETA. Only real transcriptions use it; the
++            // benchmark batch and throw-away runs keep to the normal history.
++            val speedMode = persistTranscript && SpeedMode.isEnabled(app)
++            SpeedMode.runActive = speedMode
++            SpeedMode.usedParallel = false
++            val benchmarkHistory = if (speedMode) SpeedStore.load(app) else BenchmarkStore.load(app)
+             val historySpeed = EtaEstimator.speedFor(benchmarkHistory, modelName)
+             val historyDecodeSpeed = EtaEstimator.decodeSpeedFor(benchmarkHistory)
+             val knownDurationMs = EtaEstimator.audioDurationMs(app, uri) ?: 0L
+@@ -358,15 +363,19 @@ object TranscriptionRun {
+                     publishMetrics()
+                     if (!ephemeral) {
+                         _state.value?.metrics?.let { metrics ->
+-                            BenchmarkStore.record(
+-                                app,
+-                                BenchmarkRun(
+-                                    timestampMs = System.currentTimeMillis(),
+-                                    modelName = modelName,
+-                                    fileName = name,
+-                                    metrics = metrics
+-                                )
++                            val finished = BenchmarkRun(
++                                timestampMs = System.currentTimeMillis(),
++                                modelName = modelName,
++                                fileName = name,
++                                metrics = metrics
+                             )
++                            // A run goes to the Speed history only if its windows really were decoded
++                            // side by side; anything else is an ordinary run.
++                            if (speedMode && SpeedMode.usedParallel) {
++                                SpeedStore.record(app, finished)
++                            } else {
++                                BenchmarkStore.record(app, finished)
++                            }
+                         }
+                     }
+ 
+@@ -435,6 +444,7 @@ object TranscriptionRun {
+                     StateLog.log("run failed: file=$name error=${e.message}")
+                 }
+             } finally {
++                SpeedMode.runActive = false
+                 metricsJob?.cancelAndJoin()
+                 progressJob?.cancelAndJoin()
+                 decodeJob.cancelAndJoin()
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index e735d38..6af2503 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -108,6 +108,20 @@
+     <string name="eta_left" translatable="false">~%1$s left</string>
+     <string name="eta_source_live" translatable="false">Based on this run\'s current speed</string>
+     <string name="eta_source_history" translatable="false">Based on your history with this model</string>
++    <string name="speed_mode_title" translatable="false">Speed mode</string>
++    <string name="speed_mode_sub" translatable="false">Decode two windows at once. Off by default</string>
++    <string name="speed_mode_on" translatable="false">On: two windows at once, own history and ETA</string>
++    <string name="speed_history" translatable="false">Speed history</string>
++    <string name="speed_history_sub" translatable="false">%1$d runs · its own ETA</string>
++    <string name="speed_history_empty" translatable="false">No Speed mode runs yet. Turn Speed mode on and transcribe a file; its ETA appears after the first run.</string>
++    <string name="speed_eta_title" translatable="false">ETA (Speed mode only)</string>
++    <string name="speed_eta_line" translatable="false">%1$s · %2$d runs · speed %3$s× · 1 min audio ≈ %4$s</string>
++    <string name="speed_runs_title" translatable="false">Runs</string>
++    <string name="speed_clear_title" translatable="false">Clear Speed history?</string>
++    <string name="speed_clear_message" translatable="false">This deletes only the Speed mode runs. Benchmark history is not affected.</string>
++    <string name="speed_history_exported" translatable="false">Speed history exported.</string>
++    <string name="speed_history_export_failed" translatable="false">Couldn\'t export Speed history.</string>
++    <string name="speed_history_clear_failed" translatable="false">Couldn\'t clear Speed history.</string>
+     <string name="eta_history" translatable="false">ETA history</string>
+     <string name="eta_history_subtitle" translatable="false">Speed per model, used for the estimates</string>
+     <string name="eta_history_empty" translatable="false">No completed transcription runs yet. Estimates will appear after your first transcription.</string>
