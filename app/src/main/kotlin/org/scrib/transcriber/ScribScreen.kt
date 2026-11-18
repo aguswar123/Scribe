@@ -1097,6 +1097,7 @@ private fun SettingsTab(
         item { DictionaryEntry(state.dictionaryEnabled, onOpenDictionary) }
         item { AlarmEntry() }
         item { KeepScreenEntry() }
+        item { M4aFallbackEntry() }
         item { AudiobookEntry() }
         item {
             val context = LocalContext.current

@@ -126,6 +126,8 @@
     <string name="threads_warning" translatable="false">More threads than fast cores can make it slower and hotter. Try it on one file and compare.</string>
     <string name="threads_back_auto" translatable="false">Back to Auto</string>
     <string name="threads_done" translatable="false">Done</string>
+    <string name="m4a_fallback_title" translatable="false">Read .m4a directly</string>
+    <string name="m4a_fallback_sub" translatable="false">If Android can't find the audio in an .m4a file, Scribe reads it itself.</string>
     <string name="speed_mode_title" translatable="false">Speed mode</string>
     <string name="speed_mode_sub" translatable="false">Decode two windows at once. Off by default</string>
     <string name="speed_mode_on" translatable="false">On: two windows at once, own history and ETA</string>

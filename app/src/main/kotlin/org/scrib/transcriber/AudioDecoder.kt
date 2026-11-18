@@ -82,7 +82,8 @@ object AudioDecoder {
     fun decodeToPcm16kMono(
         pfd: ParcelFileDescriptor,
         cancellation: CancellationToken? = null,
-        scratchDir: File? = null
+        scratchDir: File? = null,
+        readM4aDirectly: Boolean = true
     ): DecodedAudio {
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
@@ -90,19 +91,37 @@ object AudioDecoder {
         val handlerThread = HandlerThread("fgt-decode")
         val stopping = AtomicBoolean(false)
         try {
-            extractor.setDataSource(pfd.fileDescriptor)
-
             var inputFormat: MediaFormat? = null
-            for (i in 0 until extractor.trackCount) {
-                val format = extractor.getTrackFormat(i)
-                val mime = format.getString(MediaFormat.KEY_MIME) ?: continue
-                if (mime.startsWith("audio/")) {
-                    extractor.selectTrack(i)
-                    inputFormat = format
-                    break
+            var source: SampleSource? = null
+            var extractorFailure: Exception? = null
+            try {
+                extractor.setDataSource(pfd.fileDescriptor)
+                for (i in 0 until extractor.trackCount) {
+                    val format = extractor.getTrackFormat(i)
+                    val mime = format.getString(MediaFormat.KEY_MIME) ?: continue
+                    if (mime.startsWith("audio/")) {
+                        extractor.selectTrack(i)
+                        inputFormat = format
+                        source = ExtractorSource(extractor)
+                        break
+                    }
                 }
+            } catch (e: Exception) {
+                extractorFailure = e
+            }
+            if (source == null) {
+                // Some devices' MediaExtractor finds no audio track in a plain AAC .m4a. Read it
+                // ourselves; when that fails too, report what the extractor said.
+                val fallback = if (readM4aDirectly) Mp4AacReader.open(pfd.fileDescriptor) else null
+                if (fallback == null) {
+                    throw extractorFailure ?: RuntimeException("No audio track found")
+                }
+                Log.i(TAG, "MediaExtractor found no audio track, reading the AAC samples directly")
+                inputFormat = fallback.format
+                source = fallback
             }
             val format = inputFormat ?: throw RuntimeException("No audio track found")
+            val samples: SampleSource = source ?: throw RuntimeException("No audio track found")
             val mime = format.getString(MediaFormat.KEY_MIME)!!
             val trackDurationMs = if (format.containsKey(MediaFormat.KEY_DURATION)) {
                 (format.getLong(MediaFormat.KEY_DURATION) / 1000L).coerceAtLeast(0L)
@@ -140,13 +159,13 @@ object AudioDecoder {
                         }
                         try {
                             val buffer = mc.getInputBuffer(index) ?: return
-                            val size = extractor.readSampleData(buffer, 0)
+                            val size = samples.readSampleData(buffer, 0)
                             if (size < 0) {
                                 mc.queueInputBuffer(index, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                                 inputDone = true
                             } else {
-                                mc.queueInputBuffer(index, 0, size, extractor.sampleTime, 0)
-                                extractor.advance()
+                                mc.queueInputBuffer(index, 0, size, samples.sampleTime(), 0)
+                                samples.advance()
                             }
                         } catch (e: Exception) {
                             // Codec state can change under us; throwing here would kill the process.

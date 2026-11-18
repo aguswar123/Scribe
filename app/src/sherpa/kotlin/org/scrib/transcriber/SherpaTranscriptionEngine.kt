@@ -91,7 +91,9 @@ class SherpaTranscriptionEngine private constructor(private val appContext: Cont
                 throw CancelledException()
             }
             val decodeStartedAt = SystemClock.elapsedRealtime()
-            val pcm = AudioDecoder.decodeToPcm16kMono(audio, cancellation, appContext.cacheDir)
+            val pcm = AudioDecoder.decodeToPcm16kMono(
+                audio, cancellation, appContext.cacheDir, M4aFallback.isEnabled(appContext)
+            )
             try {
                 val decodeMs = SystemClock.elapsedRealtime() - decodeStartedAt
                 if (cancellation.isCancelled) {

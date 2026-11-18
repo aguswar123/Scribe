@@ -84,7 +84,9 @@ class EndpointTranscriptionEngine(
                 throw CancelledException()
             }
             val pcm = try {
-                AudioDecoder.decodeToPcm16kMono(audio, cancellation, appContext.cacheDir)
+                AudioDecoder.decodeToPcm16kMono(
+                audio, cancellation, appContext.cacheDir, M4aFallback.isEnabled(appContext)
+            )
             } catch (e: CancelledException) {
                 throw e
             } catch (e: Throwable) {
