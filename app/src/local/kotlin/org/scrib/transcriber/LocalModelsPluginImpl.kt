@@ -13,6 +13,8 @@ class LocalModelsPluginImpl : LocalModelsPlugin {
 
     override fun usesVadModel(modelPath: String): Boolean = TranscribeModel.usesVad(modelPath)
 
+    override fun autoThreads(): Int = CpuConfig.preferredThreadCount
+
     override fun selfTest(context: Context): SelfTestResult {
         val active = ModelManager.openActiveModel(context)
             ?: return SelfTestResult(context.getString(R.string.status_selftest_needs_model), true)

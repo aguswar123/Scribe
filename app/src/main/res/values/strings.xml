@@ -108,6 +108,24 @@
     <string name="eta_left" translatable="false">~%1$s left</string>
     <string name="eta_source_live" translatable="false">Based on this run\'s current speed</string>
     <string name="eta_source_history" translatable="false">Based on your history with this model</string>
+    <string name="threads_title" translatable="false">Threads</string>
+    <string name="threads_auto_sub" translatable="false">Auto · %1$d of %2$d cores</string>
+    <string name="threads_auto_unknown" translatable="false">Auto</string>
+    <string name="threads_fixed_sub" translatable="false">%1$d of %2$d cores</string>
+    <string name="threads_desc" translatable="false">How many CPU threads local transcribing uses.</string>
+    <string name="threads_legend" translatable="false">Outlined: fast cores. Filled: used by transcribing.</string>
+    <string name="threads_split_speed" translatable="false">Speed mode: 2 windows at once, %1$d threads each.</string>
+    <string name="threads_split_normal" translatable="false">One window at a time with %1$d threads.</string>
+    <string name="threads_opt_auto" translatable="false">Auto (recommended)</string>
+    <string name="threads_opt_n" translatable="false">%1$d threads</string>
+    <string name="threads_opt_auto_sub" translatable="false">Uses the %1$d fast cores</string>
+    <string name="threads_opt_auto_sub_unknown" translatable="false">Picks the fast cores itself</string>
+    <string name="threads_more" translatable="false">More than the fast cores</string>
+    <string name="threads_same" translatable="false">Same as Auto</string>
+    <string name="threads_fewer" translatable="false">Fewer than Auto</string>
+    <string name="threads_warning" translatable="false">More threads than fast cores can make it slower and hotter. Try it on one file and compare.</string>
+    <string name="threads_back_auto" translatable="false">Back to Auto</string>
+    <string name="threads_done" translatable="false">Done</string>
     <string name="speed_mode_title" translatable="false">Speed mode</string>
     <string name="speed_mode_sub" translatable="false">Decode two windows at once. Off by default</string>
     <string name="speed_mode_on" translatable="false">On: two windows at once, own history and ETA</string>

@@ -13,6 +13,9 @@ interface LocalModelsPlugin {
     // speech in the audio itself has no use for a second model doing the same job in front of it.
     fun usesVadModel(modelPath: String): Boolean
 
+    // How many threads Auto picks on this phone, or 0 where that is not known.
+    fun autoThreads(): Int = 0
+
     // Blocking: the caller keeps it off the main thread.
     fun selfTest(context: Context): SelfTestResult
 }

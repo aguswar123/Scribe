@@ -25,6 +25,10 @@ class GgmlTranscriptionEngine(private val appContext: Context) : TranscriptionEn
     @Volatile
     private var loadedPath: String? = null
 
+    // The thread count the cached session was opened with.
+    @Volatile
+    private var sessionThreads = 0
+
     override fun transcribe(
         audio: ParcelFileDescriptor,
         request: TranscriptionRequest?,
@@ -272,7 +276,7 @@ class GgmlTranscriptionEngine(private val appContext: Context) : TranscriptionEn
         results: Array<RunResult?>,
         onProgress: (Int) -> Unit
     ) {
-        val threads = (CpuConfig.preferredThreadCount / 2).coerceAtLeast(1)
+        val threads = (threadCount() / 2).coerceAtLeast(1)
         val sessions = ArrayList<TranscribeSession>(SIDE_BY_SIDE)
         try {
             val loaded = model()
@@ -410,11 +414,24 @@ class GgmlTranscriptionEngine(private val appContext: Context) : TranscriptionEn
         null
     }
 
+    // The Threads setting, or Auto (the fast cores) when it is not set.
+    private fun threadCount(): Int =
+        ThreadsSetting.chosen(appContext).takeIf { it > 0 } ?: CpuConfig.preferredThreadCount
+
     @Synchronized
     private fun session(): TranscribeSession {
-        session?.let { return it }
+        val threads = threadCount()
+        session?.let {
+            // A changed setting takes effect at the next run, never under a run that is going.
+            if (sessionThreads == threads || TranscriptionRun.running) return it
+            it.release()
+            session = null
+        }
         val loaded = model()
-        return loaded.openSession(CpuConfig.preferredThreadCount).also { session = it }
+        return loaded.openSession(threads).also {
+            session = it
+            sessionThreads = threads
+        }
     }
 
     @Synchronized

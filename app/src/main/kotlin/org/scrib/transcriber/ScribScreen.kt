@@ -1143,6 +1143,7 @@ private fun SettingsTab(
         item { EtaHistoryEntry(onOpenEtaHistory) }
         if (BuildConfig.LOCAL_MODELS) {
             item { SpeedModeEntries() }
+            item { ThreadsEntry() }
         }
         item { ChangelogEntry(onOpenChangelog) }
     }
